@@ -30,9 +30,11 @@ class Node (process):
     # all the other initial nodes; otherwise it is empty set
 
     # **** variables for managing churn ****
+
     
     # Why is this as it is? Should be false initially, but why is it true?
     self.is_joined = bool(known_nodes) # whether node has joined the system
+
     self.join_bound = 0 # number of enter-echo msgs to receive
                         # before joining
     self.join_counter = 0 # number of enter-echo messages received
