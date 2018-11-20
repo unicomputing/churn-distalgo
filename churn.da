@@ -1,5 +1,7 @@
 import random
 import time
+import configparser
+config = configparser.ConfigParser()
 
 BETA = 0.6
 GAMMA = 0.6
