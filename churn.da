@@ -5,22 +5,40 @@ config = configparser.ConfigParser()
 
 BETA = 0.6
 GAMMA = 0.6
-NTRIES = 1
 NUM_INIT_NODE = 3
 
 # ----------------------------------------
 # Node class
 # ----------------------------------------
 
+"""
+DOES THIS WORK WITH N=1?
+If there's no ID in the enter-echo message, they can be spoofed
+
+- Make each node spontaneously read/write values into the register. This ||ism will break the code
+- Randomize based on a frequency and time that can be adjusted. 
+
+while(True):
+    read_or_write = random.randint(1)
+
+- For two consecutive writes  (in a short time span) it considers on the second because the tag is overwritten. This could be a problem
+- Node randomly crashes
+
+"""
+
 class Node (process):
-  def setup(known_nodes, scheduler): # for initial node, known_nodes is
-         # all the other initial nodes; otherwise it is empty set
+  def setup(known_nodes, scheduler): 
+    # for initial node, known_nodes is
+    # all the other initial nodes; otherwise it is empty set
 
     # **** variables for managing churn ****
+    
+    # Why is this as it is? Should be false initially, but why is it true?
     self.is_joined = bool(known_nodes) # whether node has joined the system
     self.join_bound = 0 # number of enter-echo msgs to receive
                         # before joining
     self.join_counter = 0 # number of enter-echo messages received
+    # Initially assume every know node has entered and joined
     self.Changes = (setof(('enter',q), q in known_nodes) | 
                     setof(('join',q), q in known_nodes))  # set of ENTER, 
                                    #LEAVE, and JOINED events known to node 
@@ -68,6 +86,7 @@ class Node (process):
       bcast('enter-echo', Changes, (val, num, w_id), is_joined, p)
 
   def receive(msg = ('enter-echo', C, (v, s, i), j, p)):
+      # Why does this need the ID
       if (s, i) > (num, w_id, id):
           val, num, w_id = v, s, i
       Changes = Changes | C
@@ -194,7 +213,7 @@ class Node (process):
 
   def run():
 #    output(self, 'running')
-    await(False)
+    await(False) # Wait till the condition is true
     output('node', self, 'at end of run')
 
 # ----------------------------------------
@@ -203,23 +222,39 @@ class Node (process):
 
 class Scheduler (process):
   def setup():
+
       self.nodes = new(Node, num=NUM_INIT_NODE)
+      #### Variable declarations
+      self.allnodes = nodes
+      self.joined = nodes
+      self.entered = nodes
+      # A map with process_id -> time_taken_from_enter_to_join
+      self.join_times = {}
+      # A map with process_id -> [time_taken_from_enter_to_write]
+      self.write_times = {} 
+      # A map with process_id -> [time_taken_from_enter_to_read]
+      self.read_times = {}
+      
+      #### END Variable declarations
+      
       for p in nodes: setup(p, [nodes-{p}, self])
       start(nodes)
-
       output('nodes present initially are', nodes)
 
       self.replies = set()
-
+      
+  def print_stats():
+    for pid in join_times:
+      output("Process ", pid, " took ", join_times[pid], " seconds to join")
+    print(write_times)
+    print(read_times)
+      
   def run():
 
-#     for i in range(NTRIES):
       p = random.choice(list(nodes))
       output('randomly chosen node is', p)
 
-#      test_read(p)
-#      test_write(p,37)
-#      test_read(p,)
+
       test_leave(p)
       test_enter()
       test_enter()
@@ -235,6 +270,7 @@ class Scheduler (process):
       test_read(p)
 
       await(received('done'))
+      print_stats()
       output('scheduler terminating')
 
   def test_leave(p):
@@ -245,15 +281,24 @@ class Scheduler (process):
       p = new(Node, [set(), self])
       start(p)
       nodes.add(p)
+      # LOL WHAT!
       await(some(received('joined', from_=_p, clk=c),
                  has= ('joined',p,c) not in replies))
       output('join completed indication received', p, c)
+      # We already have the enter times, now they have joined. So we know how long it
+      # took to enter
+      join_times[p] = time.time() - join_times[p]
       replies.add(('joined',p,c))
 
   def test_read(p):
       send('read', to= p)
+      if p in read_times:
+        read_times[p].append(time.time())
+      else:
+        read_times[p] = [time.time()]
       await(some(received(('return',temp), from_=_p, clk=c),
                  has= (('return',temp),p,c) not in replies))
+      read_times[p][-1] = time.time() - read_times[p][-1]
       output('----waited', p, c)
       replies.add((('return',temp),p,c))
       output('read returns with value ', temp)
@@ -261,12 +306,20 @@ class Scheduler (process):
   def test_write(p,val):
       output('test write start')
       send(('write',val), to= p)
+      if p in write_times:
+        write_times[p].append(time.time())
+      else:
+        write_times[p] = [time.time()]
       await(some(received('ack', from_=_p, clk=c),
                  has= ('ack',p,c) not in replies))
+      write_times[p][-1] = time.time() - write_times[p][-1]
       output('write returns with ack', p, c)
       replies.add(('ack',p,c))
 
-  def receive(msg = ('bcast',m)):
+  def receive(msg = ('bcast',m), from_=pid):
+      if m[0] == "enter":
+        join_times[pid] = time.time()
+        
       send(m, to=nodes)
 
   def receive(msg = 'done'):
@@ -279,6 +332,7 @@ class Scheduler (process):
 # main
 # ----------------------------------------
 
+
 def main():
   config(clock = Lamport)
 
@@ -287,23 +341,4 @@ def main():
 
   time.sleep(3)
   send('done', to= scheduler)
-
-#  apps = new(App, num=nnode)
-#  for c,a in zip(list(clients), list(apps)):
-#      setup(a, [c])
-#  #lower level
-#   clients = set()
-#   apps = set()
-#   for i in range(10):
-#     c = new(Client)
-#     a = new(App, [c])
-#     clients.add(c)
-#     apps.add(a)
-
-#  systems of entities/robots
-#  each is a app, client, and server (all servers)
-#  join
-#  view
-#  simulated register
-#  read and write
-#  leave
+  
