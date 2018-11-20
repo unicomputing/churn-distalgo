@@ -1,7 +1,6 @@
 import random
 import time
 import configparser
-config = configparser.ConfigParser()
 
 BETA = 0.6
 GAMMA = 0.6
@@ -25,6 +24,11 @@ while(True):
 - Node randomly crashes
 
 """
+
+def read_config():
+    spec_config = configparser.ConfigParser()
+    spec_config.read('config.ini')
+    return spec_config
 
 class Node (process):
   def setup(known_nodes, scheduler): 
@@ -335,10 +339,9 @@ class Scheduler (process):
 
 def main():
   config(clock = Lamport)
-
+  spec_config = read_config()
   scheduler = new(Scheduler, [])
   start(scheduler)
-
   time.sleep(3)
   send('done', to= scheduler)
   
