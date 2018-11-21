@@ -1,11 +1,9 @@
+*.py
 *.pyc
 *.dap
 __pycache__/
 *.log
 *.bak
-da/lib/**/*.py
-da/examples/**/*.py
-benchmarks/**/*.py
 dist/
 build/
 pyDistAlgo.egg-info/
