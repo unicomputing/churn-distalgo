@@ -17,21 +17,21 @@ If there's no ID in the enter-echo message, they can be spoofed
 - Make each node spontaneously read/write values into the register. This ||ism will break the code
 - Randomize based on a frequency and time that can be adjusted. 
 
-while(True):
-    read_or_write = random.randint(1)
 
 - For two consecutive writes  (in a short time span) it considers on the second because the tag is overwritten. This could be a problem
 - Node randomly crashes
 
+
+- Possible problems with the algo
+------ I think a simultaneous read and write could fail. If the read's RP finishes, after that the RP&WR of the write occurs. Now the read has an out-dated value of the register.
+
 """
 
-def read_config():
-    spec_config = configparser.ConfigParser()
-    spec_config.read('config.ini')
-    return spec_config
 
 class Node (process):
-  def setup(known_nodes, scheduler): 
+  def setup(known_nodes, scheduler):
+    self.custom_config = configparser.ConfigParser()
+    self.custom_config.read('config.ini') 
     # for initial node, known_nodes is
     # all the other initial nodes; otherwise it is empty set
 
@@ -79,8 +79,17 @@ class Node (process):
 
   # broadcast is actually peformed by scheduler which has perfect global
   # knowledge of which nodes are present in the system
+  
+  
+  def delayed_send(m, rec):
+    # We can have a max of 
+    delay = random.randint(0, float(custom_config["GENERAL"]["max_delay"])*100)/100 
+    if await(False):pass
+    elif timeout(delay): pass
+    send(m, to=rec)
+  
   def bcast(*m):
-      send(('bcast',m), to=scheduler)
+      delayed_send(('bcast',m), scheduler)
 
   # ***************** methods for managing the churn ******************
 
@@ -110,7 +119,7 @@ class Node (process):
               is_joined = True
               output('joined')
               Changes.add(('join',self))
-              send(('joined'), to=scheduler) # tell scheduler I've joined
+              delayed_send(('joined'), scheduler) # tell scheduler I've joined
               output('sent joined to scheduler')
               bcast('joined',self)
 
@@ -137,7 +146,6 @@ class Node (process):
       output('received leave about process with id',p)
       Changes.add(('leave',p))
       bcast('leave-echo',p)
-#      output('received leave message from node',p,'Changes set is',Changes)
 
   def receive(msg = ('leave-echo',p)):
       output('received leave-echo about process with id',p)
@@ -199,10 +207,10 @@ class Node (process):
               wp_pending = False
               if (read_pending):
                   read_pending = False
-                  send(('return',temp), to=scheduler)
+                  delayed_send(('return',temp), scheduler)
               if (write_pending):
                   write_pending = False
-                  send('ack', to=scheduler)
+                  delayed_send('ack', scheduler)
 
   # ***** "server" code follows ****
 
@@ -317,7 +325,6 @@ class Scheduler (process):
       p = new(Node, [set(), self])
       start(p)
       nodes.add(p)
-      # LOL WHAT!
       await(some(received('joined', from_=_p, clk=c),
                  has= ('joined',p,c) not in replies))     #maybe has is present becuase some needs has 
       output('join completed indication received', p, c)
@@ -362,7 +369,6 @@ class Scheduler (process):
   def receive(msg = 'done'):
       output('done received by scheduler')
       send('done', to= nodes)
-      #end(nodes)
       output('scheduler sent done msgs to nodes', nodes)
 
 # ----------------------------------------
@@ -370,11 +376,12 @@ class Scheduler (process):
 # ----------------------------------------
 
 
+
 def main():
   config(clock = Lamport)
-  spec_config = read_config()
   scheduler = new(Scheduler, [])
   start(scheduler)
-  time.sleep(3)
+  time.sleep(20)
   send('done', to= scheduler)
+
   
