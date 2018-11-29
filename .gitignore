@@ -1,2 +1,14 @@
 *.py
-__p*/*
+*.pyc
+*.dap
+__pycache__/
+*.log
+*.bak
+dist/
+build/
+pyDistAlgo.egg-info/
+doc/auto/
+doc/*.aux
+doc/*.pdf
+MANIFEST
+.dir-locals.el
