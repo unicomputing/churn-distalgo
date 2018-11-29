@@ -6,6 +6,7 @@ BETA = 0.6
 GAMMA = 0.6
 NUM_INIT_NODE = 6
 
+
 # ----------------------------------------
 # Node class
 # ----------------------------------------
@@ -31,7 +32,7 @@ If there's no ID in the enter-echo message, they can be spoofed
 class Node (process):
   def setup(known_nodes, scheduler):
     self.custom_config = configparser.ConfigParser()
-    self.custom_config.read('config.ini') 
+    self.custom_config.read('config.ini')
     # for initial node, known_nodes is
     # all the other initial nodes; otherwise it is empty set
 
@@ -131,7 +132,7 @@ class Node (process):
       bcast('joined-echo',p)
 
   def receive(msg = ('joined-echo',p)):
-      output('recieved joined echo about process with id',p)
+      #output('recieved joined echo about process with id',p)
       Changes.add(('join',p))
       Changes.add(('enter',p))
 
@@ -215,7 +216,7 @@ class Node (process):
   # ***** "server" code follows ****
 
   def receive(msg= ('update', (v, s, i), wt, q)):
-    output('REcieved an update message')
+    #output('REcieved an update message')
     if w_id == None or (s, i) > (num, w_id):
        val, num, w_id = v, s, i
     if is_joined:
@@ -227,10 +228,10 @@ class Node (process):
     if is_joined:
 #      print('====qeury', p)
       bcast('reply', (val, num, w_id), rt, p)
-      output('sent a reply message for query message with val ,num and w id as ',val,num,w_id)
+      output('sent a reply message for query message with val ,num and w id as ',val, num, w_id)
 
   def receive(msg = ('update-echo', (v, s, i))):
-    output('recived an update echo message')
+    #output('recived an update echo message')
     if (s, i) > (num, w_id):
         val, num, w_id = v, s, i
 #to include some random unavailibility if nodes
@@ -258,6 +259,8 @@ class Scheduler (process):
       self.custom_config = configparser.ConfigParser()
       self.custom_config.read('config.ini') 
 
+      self.custom_config = configparser.ConfigParser()
+      self.custom_config.read('config.ini')
       self.nodes = new(Node, num=NUM_INIT_NODE)
       #### Variable declarations
       self.allnodes = nodes
@@ -265,19 +268,22 @@ class Scheduler (process):
       self.entered = nodes
       # A map with process_id -> time_taken_from_enter_to_join
       self.join_times = {}
-      # A map with process_id -> [time_taken_from_enter_to_write]
+      # A map with process_id -> [time_taken_to_write]
       self.write_times = {} 
-      # A map with process_id -> [
+      # A map with process_id -> [time_taken_to_read]
       self.read_times={}
-      self.crash_nodes=set()
       # to keep a track of crashed nodes 
+      self.crash_nodes=set()
+      # A process is considered in-use of a request has been issued to it
+      # for either a read or a write
+      self.in_use = set()
       #### END Variable declarations
+
+      self.replies = set()
       
       for p in nodes: setup(p, [nodes-{p}, self])
       start(nodes)
       output('nodes present initially are', nodes)
-
-      self.replies = set()
       
   def print_stats():
     for pid in join_times:
@@ -303,8 +309,6 @@ class Scheduler (process):
        # test_enter()
        # test_enter()
 
-
-
         p= random.choice(list(nodes))
         r=random.randint(1,10)              #crash with a random probability
         if (r>1):
@@ -313,21 +317,32 @@ class Scheduler (process):
 
         r=random.randint(1,10)
         if (r>0):
-            p=random.choice(list(nodes-crash_nodes))
-            output('Sending sleep to ',p)
-            send('sleep',to=p)
-
-
-        p = random.choice(list(nodes-crash_nodes))
-        output('randomly chosen node is', p, 'to write 12')
-        test_write(p,12)
-        output('test_write')
-
-        p = random.choice(list(nodes-crash_nodes))
-        output('randomly chosen node is', p, 'to read')
-        test_read(p)
-        rounds-=1 
-
+          p=random.choice(list(nodes-crash_nodes))
+          output('Sending sleep to ',p)
+          send('sleep',to=p)
+        p= random.choice(list(nodes))
+        r=random.randint(1,10)              #crash with a random probability
+        if (r>1):
+          crash_node(p)
+          output('Randomly chosen node to crash ',p)      
+        # Bits to identify whether we randomly do a read of a write 
+        # If we have a True as the o/p of random choice then we do a read
+        READ = True
+        WRITE = False
+        for x in range(int(custom_config["GENERAL"]["num_read_writes"])):
+          read_or_write = random.choice([True, False])
+          p = random.choice(list(nodes-crash_nodes-in_use))
+          output('randomly chosen node is: ', p)
+          in_use.add(p)
+          if read_or_write == READ:
+            test_read(p)
+            output("Issuing a read command")
+          else:
+            val = random.randint(1,100)
+            output("Issuing a write command with value: ", val)
+            test_write(p, val)
+        rounds-=1
+        
     output('Exited the loop')
     await(received('done'))
     print_stats()
@@ -356,14 +371,13 @@ class Scheduler (process):
         read_times[p].append(time.time())
       else:
         read_times[p] = [time.time()]
-      # Wait till we receive a return value from the process. Since we can have multiple  
-      # calls to read at different time
-      await(some(received(('return',temp), from_=_p, clk=c),
-                 has= (('return',temp),p,c) not in replies))
-      read_times[p][-1] = time.time() - read_times[p][-1]
-      output('----waited', p, c)
-      replies.add((('return',temp),p,c))
+      
+  def receive(msg=('return',temp), from_=p):
       output('read returns with value ', temp)
+      read_times[p][-1] = time.time() - read_times[p][-1]
+      # p is no longer in use, so remove it from the in_use set
+      in_use.remove(p)
+      
 
   def test_write(p,val):
       output('test write start')
@@ -372,11 +386,13 @@ class Scheduler (process):
         write_times[p].append(time.time())
       else:
         write_times[p] = [time.time()]
-      await(some(received('ack', from_=_p, clk=c),
-                 has= ('ack',p,c) not in replies))
+
+      
+  def receive(msg=('ack'), from_=p):
+      output('write returned an ack from: ', p)
       write_times[p][-1] = time.time() - write_times[p][-1]
-      output('write returns with ack', p, c)
-      replies.add(('ack',p,c))
+      # p is no longer in use, so remove it from the in_use set
+      in_use.remove(p)
 
   def receive(msg = ('bcast',m), from_=pid):
       if m[0] == "enter":
@@ -400,7 +416,7 @@ def main():
   config(clock = Lamport)
   scheduler = new(Scheduler, [])
   start(scheduler)
-  time.sleep(30)
+  time.sleep(15)
   send('done', to= scheduler)
   output('sent done to schedule')
 
