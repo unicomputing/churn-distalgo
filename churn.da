@@ -4,7 +4,7 @@ import configparser
 
 BETA = 0.6
 GAMMA = 0.6
-NUM_INIT_NODE = 2
+NUM_INIT_NODE = 6
 
 # ----------------------------------------
 # Node class
@@ -233,7 +233,11 @@ class Node (process):
     output('recived an update echo message')
     if (s, i) > (num, w_id):
         val, num, w_id = v, s, i
-
+#to include some random unavailibility if nodes
+  def receive(msg ='sleep'):
+    output('sleeping for 1 second')
+    time.sleep(int(custom_config['PERFORMANCE']['sleep_time_node']))
+  	
   def receive(msg= 'done'):
     output('exiting by done')
     exit()
@@ -251,6 +255,8 @@ class Node (process):
 
 class Scheduler (process):
   def setup():
+      self.custom_config = configparser.ConfigParser()
+      self.custom_config.read('config.ini') 
 
       self.nodes = new(Node, num=NUM_INIT_NODE)
       #### Variable declarations
@@ -284,38 +290,48 @@ class Scheduler (process):
 
    
   def run():
+    
+    rounds= int(custom_config['GENERAL']['num_of_rounds'])
+    while(rounds>0):
+        output('ROUND NUMBER',rounds)
+        p = random.choice(list(nodes-crash_nodes))
+        output('randomly chosen node is', p)
 
 
-      p = random.choice(list(nodes-crash_nodes))
-      output('randomly chosen node is', p)
-
-
-      test_leave(p)
-      test_enter()
-      test_enter()
-      test_enter()
+        test_leave(p)
+        test_enter()
+       # test_enter()
+       # test_enter()
 
 
 
-      p= random.choice(list(nodes))
-      r=random.randint(1,10)              #crash with a random probability
-      if (r>1):
-      	crash_node(p)
-      	output('Randomly chosen node to crash ',p)
+        p= random.choice(list(nodes))
+        r=random.randint(1,10)              #crash with a random probability
+        if (r>1):
+      	    crash_node(p)
+      	    output('Randomly chosen node to crash ',p)
 
-      p = random.choice(list(nodes-crash_nodes))
-      output('randomly chosen node is', p, 'to write 12')
-      test_write(p,12)
-      output('test_write')
-
-      p = random.choice(list(nodes-crash_nodes))
-      output('randomly chosen node is', p, 'to read')
-      test_read(p)
+        r=random.randint(1,10)
+        if (r>0):
+            p=random.choice(list(nodes-crash_nodes))
+            output('Sending sleep to ',p)
+            send('sleep',to=p)
 
 
-      await(received('done'))
-      print_stats()
-      output('scheduler terminating')
+        p = random.choice(list(nodes-crash_nodes))
+        output('randomly chosen node is', p, 'to write 12')
+        test_write(p,12)
+        output('test_write')
+
+        p = random.choice(list(nodes-crash_nodes))
+        output('randomly chosen node is', p, 'to read')
+        test_read(p)
+        rounds-=1 
+
+    output('Exited the loop')
+    await(received('done'))
+    print_stats()
+    output('scheduler terminating')
 
   def test_leave(p):
       send('leave-signal', to= p)
@@ -370,6 +386,7 @@ class Scheduler (process):
 
   def receive(msg = 'done'):
       output('done received by scheduler')
+      output('total nodes in the system',nodes)
       send('done', to= nodes)
       output('scheduler sent done msgs to nodes', nodes)
 
@@ -383,7 +400,8 @@ def main():
   config(clock = Lamport)
   scheduler = new(Scheduler, [])
   start(scheduler)
-  time.sleep(20)
+  time.sleep(30)
   send('done', to= scheduler)
+  output('sent done to schedule')
 
   
