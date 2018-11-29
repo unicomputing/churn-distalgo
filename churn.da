@@ -340,6 +340,8 @@ class Scheduler (process):
         read_times[p].append(time.time())
       else:
         read_times[p] = [time.time()]
+      # Wait till we receive a return value from the process. Since we can have multiple  
+      # calls to read at different time
       await(some(received(('return',temp), from_=_p, clk=c),
                  has= (('return',temp),p,c) not in replies))
       read_times[p][-1] = time.time() - read_times[p][-1]
