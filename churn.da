@@ -331,16 +331,23 @@ class Scheduler (process):
         WRITE = False
         for x in range(int(custom_config["GENERAL"]["num_read_writes"])):
           read_or_write = random.choice([True, False])
-          p = random.choice(list(nodes-crash_nodes-in_use))
-          output('randomly chosen node is: ', p)
-          in_use.add(p)
-          if read_or_write == READ:
-            test_read(p)
-            output("Issuing a read command")
+          allowed_nodes = list(nodes-crash_nodes-in_use)
+          if allowed_nodes:
+            p = random.choice(allowed_nodes)
+            output('randomly chosen node is: ', p)
+            in_use.add(p)
+            if read_or_write == READ:
+              test_read(p)
+              output("Issuing a read command")
+            else:
+              val = random.randint(1,100)
+              output("Issuing a write command with value: ", val)
+              test_write(p, val)
           else:
-            val = random.randint(1,100)
-            output("Issuing a write command with value: ", val)
-            test_write(p, val)
+            output("No nodes present to perform read or write operation")
+            output("Skipping one round...")
+            rounds-=1
+            break
         rounds-=1
         
     output('Exited the loop')
