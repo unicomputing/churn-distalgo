@@ -110,7 +110,7 @@ class Node (process):
           val, num, w_id = v, s, i
       Changes = Changes | C
       if (not is_joined) and (p == self):
-          if (j == True) and (join_bound == 0):     #since we are counting join_bound on basis of imfo from an already joined node
+          if (j == True) and (join_bound == 0):     #since we are counting join_bound on basis of info from an already joined node
               join_bound = GAMMA * len(Present())
               output('join_bound set to', join_bound, 'based on Present size of', len(Present()))
           join_counter += 1
@@ -125,7 +125,7 @@ class Node (process):
               bcast('joined',self)
 
   def receive(msg = ('joined', p)):
-      output('received joined message from procedd id',p)
+      output('received joined message from process id',p)
       Changes.add(('join',p))
       Changes.add(('enter',p))
       output('sending broadcast about process joined with id',p)
@@ -258,9 +258,6 @@ class Scheduler (process):
   def setup():
       self.custom_config = configparser.ConfigParser()
       self.custom_config.read('config.ini') 
-
-      self.custom_config = configparser.ConfigParser()
-      self.custom_config.read('config.ini')
       self.nodes = new(Node, num=NUM_INIT_NODE)
       #### Variable declarations
       self.allnodes = nodes
@@ -280,6 +277,7 @@ class Scheduler (process):
       #### END Variable declarations
 
       self.replies = set()
+      self.max_delay = float(self.custom_config["GENERAL"]["max_delay"])
       
       for p in nodes: setup(p, [nodes-{p}, self])
       start(nodes)
@@ -363,12 +361,19 @@ class Scheduler (process):
       p = new(Node, [set(), self])
       start(p)
       nodes.add(p)
-      await(some(received('joined', from_=_p, clk=c),
-                 has= ('joined',p,c) not in replies))     #maybe has is present becuase some needs has 
-      output('join completed indication received', p, c)
+      timed_out = False
+      # if await(some(received('joined', from_=_p, clk=c), has= ('joined',p,c) not in replies)):
+      if await(some(received('joined', from_=_p, clk=c), has= ('joined',p,c) not in replies)):
+         pass    #maybe has is present becuase some needs has 
+      elif max_delay and timeout(max_delay*4):
+        # checking if a node gets joined in 4*D time interval
+        timed_out = True
       # We already have the enter times, now they have joined. So we know how long it
       # took to enter
       join_times[p] = time.time() - join_times[p]
+      if timed_out:
+        output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(p, join_times[p]))
+      output('join completed indication received', p, c)
       replies.add(('joined',p,c))
       output('the replies set is as follows',replies)
 
@@ -424,6 +429,7 @@ def main():
   scheduler = new(Scheduler, [])
   start(scheduler)
   time.sleep(15)
+  # instead of hard timelimit can we use other parameters to stop the system?
   send('done', to= scheduler)
   output('sent done to schedule')
 
