@@ -10,16 +10,13 @@ D=0.05
 t=0
 stop_flag=True
 N_MIN=8
-NUM_INIT_NODE = 10
-
+NUM_INIT_NODE = 15
 
 # ----------------------------------------
 # Node class
 # ----------------------------------------
 
 """
-DOES THIS WORK WITH N=1?
-If there's no ID in the enter-echo message, they can be spoofed
 
 - Make each node spontaneously read/write values into the register. This ||ism will break the code
 - Randomize based on a frequency and time that can be adjusted. 
@@ -180,6 +177,8 @@ class Node (process):
 
   def receive(msg='read'):
       output('read invoked')
+      # Needed to measure the timestamp of the read request
+      send(('readtime', num, w_id), to=scheduler)
       read_pending = True
       begin_read_phase()
 
@@ -217,6 +216,9 @@ class Node (process):
       if read_pending:
           temp = val
       bcast('update', (temp, num, w_id), tag, self)
+      if write_pending:
+        # Required to calculate the total ordering
+        send(('writeupdatetime', num, w_id, temp), to=scheduler)
       output('updated vlaues are being sent as value,sequence,w_id',temp,num,w_id)
       rw_counter = 0
       wp_pending = True
@@ -248,7 +250,7 @@ class Node (process):
     if is_joined:
 #      print('====qeury', p)
       bcast('reply', (val, num, w_id), rt, p)
-      output('sent a reply message for query message with val ,num and w id as ',val, num, w_id)
+      #output('sent a reply message for query message with val ,num and w id as ',val, num, w_id)
 
   def receive(msg = ('update-echo', (v, s, i))):
     #output('recived an update echo message')
@@ -296,6 +298,8 @@ class Scheduler (process):
       self.in_use = set()
       #dictionary to store read or write issued command time
       self.rwtime=dict()
+      # read write timestamps to check the order
+      self.readwriteorder = []
       #### END Variable declarations
 
       self.replies = set()
@@ -318,16 +322,15 @@ class Scheduler (process):
   def crash_node(p):
   	crash_nodes.add(p)
 
-   
-  def run():
-    
+  def test_general_correctness():
+    # Just a bunch random tests. Here we go completely crazy and 
+    # make things crazy
     rounds= int(custom_config['GENERAL']['num_of_rounds'])
     D= float(custom_config['GENERAL']['max_delay'])
     while(rounds>0):
         output('ROUND NUMBER',rounds)
         p = random.choice(list(nodes-crash_nodes))
         output('randomly chosen node is', p)
-
 
         test_leave(p)
         test_enter()
@@ -362,20 +365,115 @@ class Scheduler (process):
             in_use.add(p)
             if read_or_write == READ:
               test_read(p)
-              rwtime[p]=time.time()
               output("Issuing a read command")
             else:
               val = random.randint(1,100)
               output("Issuing a write command with value: ", val)
               test_write(p, val)
-              rwtime[p]=time.time()
           else:
             output("No nodes present to perform read or write operation")
             output("Skipping one round...")
             rounds-=1
             break
-        rounds-=1
+        rounds-=1 
+   
+   
+  def test_condition_3():
+    # The read and write operations are atomic:
+    #there is an ordering of all completed reads and writes
+    #and some subset of the uncompleted writes such that
+    #every read returns the value of the latest preceding
+    #write (or the initial value of the register if there is no
+    #preceding write) and, if an operation op1 finishes before
+    #another operation op2 begins, then op1 occurs before
+    #op2 in the ordering.
+    
+    # The idea is the we keep testing our read and writes. A number of random reads and random writes.
+    # Once we have that test to ensure that if a preceding write is complete, a read returns the correct values
+    
+    # Bits to identify whether we randomly do a read of a write 
+        # If we have a True as the o/p of random choice then we do a read
+    READ = True
+    WRITE = False
+    
+    # To simplify our testing we assuming that a value can be used exactly once and similarly
+    # every process is used once.
+    used_values = set()
+    local_in_use = set()
+    for x in range(int(custom_config["GENERAL"]["num_read_writes"])):
+      read_or_write = random.choice([True, False])
+      p = random.choice(list(nodes-local_in_use))
+      output('randomly chosen node is: ', p)
+      local_in_use.add(p)
+      in_use.add(p)
+      if read_or_write == READ:
+        test_read(p)
+        output("Issuing a read command")
+      else:
+        # Keep looping till we see a new value
+        while(True):
+            val = random.randint(1,1000)
+            if val not in used_values:
+                used_values.add(val)
+                break
+        output("Issuing a write command with value: ", val)
+        test_write(p, val)
+      # Introduce a small delay between two sends
+      if await(False):pass
+      elif timeout(0.1): output("Waited for 0.0 seconds")
+     
+    output("Waiting 5 seconds for all responses to arrive before checking")    
+    # Introduce a small delay between two sends
+    if await(False):pass
+    elif timeout(10): output("Waited for 10 seconds")
+
+    check_condition_3_validity()
+    
+  def anyof(s):
+        return next(iter(s)) if s else None
+
+  def check_condition_3_validity():
+    # Now that we have made out read and writes, we check the schedulers 
+    # received queue to check whether the data returned is ordered correctly.
+    
+    # For every read value in 'received' check the latest preceding written value
+    # This is going to be some crazy distalgo, but here goes. The idea is that:
+    # For every 'return', get the write just before it (if None, that is okay).
+    # Then check that this write and the about read have the exact same value
+    
+    output("Read write order is: ", readwriteorder)
+    
+    def getPreviousWrite(readwrites):
+        # Search for the first write from the end
+        for item in reversed(readwrites):
+            if item[0] == "write":
+                return item
         
+        
+    # For every read, find the previous write. Then check whether the values match. If they don't 
+    # we have a problem.
+    # We check from the second element in the list because we don't care about the first read.
+    for i in range(1, len(readwriteorder)):
+        item = readwriteorder[i]
+        # We have a read, find the previous write or ensure that there is no write if the value is None
+        if item[0] == 'readtime':
+            p = item[3]
+            # Get the value the read returned
+            val = anyof( setof((val), received(('return', val), from_=p)) )
+            previouswrite = getPreviousWrite(readwriteorder[:i])
+            if previouswrite == None:
+                if val != None:
+                    output("ERRORa!")
+            else:
+                if val == None:
+                    output("ERRORb!")
+                elif val != previouswrite[4]:
+                    output("ERRORc!")
+    
+  def run():
+    
+    #test_general_correctness()
+    test_condition_3()        
     output('Exited the loop')
     await(received('done'))
     print_stats()
@@ -417,15 +515,16 @@ class Scheduler (process):
 
   def test_read(p):
       send('read', to= p)
+      rwtime[p] = time.time()
       if p in read_times:
         read_times[p].append(time.time())
       else:
         read_times[p] = [time.time()]
       
   def receive(msg=('return',temp), from_=p):
+      output('read returns with value ', temp)
       interval=time.time()-rwtime[p]/D
       rwtime[p]=interval
-      output('read returns with value ', temp)
       read_times[p][-1] = time.time() - read_times[p][-1]
       # p is no longer in use, so remove it from the in_use set
       in_use.remove(p)
@@ -434,6 +533,7 @@ class Scheduler (process):
   def test_write(p,val):
       output('test write start')
       send(('write',val), to= p)
+      rwtime[p] = time.time()
       if p in write_times:
         write_times[p].append(time.time())
       else:
@@ -441,16 +541,17 @@ class Scheduler (process):
 
       
   def receive(msg=('ack'), from_=p):
+      output('write returned an ack from: ', p)
       interval=time.time()-rwtime[p]/D
       rwtime[p]=interval
-      output('write returned an ack from: ', p)
       write_times[p][-1] = time.time() - write_times[p][-1]
       # p is no longer in use, so remove it from the in_use set
       in_use.remove(p)
 
   def receive(msg = ('bcast',m), from_=pid):
       if m[0] == "enter":
-        send(m, to=nodes-crash_nodes)
+        join_times[pid] = time.time()
+      send(m, to=nodes-crash_nodes)
 
   def receive(msg='setValues'):
        Nt=len(nodes)
@@ -458,13 +559,18 @@ class Scheduler (process):
        churn=0
        if Nt<N_MIN:
         output('SYSTEM SIZE BELOW NMIN')
+       
+  def receive(msg= ('writeupdatetime', num, wid, val), from_=pid):
+    readwriteorder.append([num, wid,'write', pid, val])
+    
+  def receive(msg=('readtime', num, wid), from_=pid):
+    readwriteorder.append([num, wid,'read', pid]) 
 
   def receive(msg = 'done'):
       output('done received by scheduler')
       output('total nodes in the system',nodes)
       send('done', to= nodes)
       send('stopExecution',to=monitor_process)
-      output('sent STAPHHH TO Monitor')
       output(rwtime)
       output('scheduler sent done msgs to nodes', nodes)
 
