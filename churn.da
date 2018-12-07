@@ -40,7 +40,7 @@ class Monitor (process):
     
 
   def run():
-    t=0
+    t=time.time()
     while stop_flag:
         -- y1            
         if(time.time()==t+D):
@@ -436,20 +436,13 @@ class Scheduler (process):
     # Now that we have made out read and writes, we check the schedulers 
     # received queue to check whether the data returned is ordered correctly.
     
-    # For every read value in 'received' check the latest preceding written value
-    # This is going to be some crazy distalgo, but here goes. The idea is that:
-    # For every 'return', get the write just before it (if None, that is okay).
-    # Then check that this write and the about read have the exact same value
     
-    output("Read write order is: ", readwriteorder)
-    
+    output("Read write order is: ", readwriteorder)    
     def getPreviousWrite(readwrites):
         # Search for the first write from the end
         for item in reversed(readwrites):
             if item[0] == "write":
-                return item
-        
-        
+                return item  
     # For every read, find the previous write. Then check whether the values match. If they don't 
     # we have a problem.
     # We check from the second element in the list because we don't care about the first read.
