@@ -33,28 +33,12 @@ If there's no ID in the enter-echo message, they can be spoofed
 ------ I think a simultaneous read and write could fail. If the read's RP finishes, after that the RP&WR of the write occurs. Now the read has an out-dated value of the register.
 
 """
-"""
-class ThreadingExample(object):
-    def __init__(self, interval=1):
-        self.interval = interval
-        thread = threading.Thread(target=self.run, args=())
-        thread.daemon = True
-        thread.start()
-
-    def run(self):      #runs forever i
-        global t
-        global D
-        while True:
-            if(time.time()==t+D):
-            	t=time.time()
-"""
 
 class Monitor (process):
   def setup(D,stop_flag:bool,scheduler):
         pass
 
   def receive(msg='stopExecution'):
-    output('YAYIE YAYIYE')
     stop_flag=False
     
 
