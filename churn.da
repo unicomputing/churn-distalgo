@@ -1,51 +1,15 @@
 import random
 import time
-import threading
 import configparser 
 
 ALPHA=0.05
 BETA = 0.6
 GAMMA = 0.6
-D=0.05
-t=0
-stop_flag=True
-N_MIN=8
 NUM_INIT_NODE = 15
 
 # ----------------------------------------
 # Node class
 # ----------------------------------------
-
-"""
-
-- Make each node spontaneously read/write values into the register. This ||ism will break the code
-- Randomize based on a frequency and time that can be adjusted. 
-
-
-- For two consecutive writes  (in a short time span) it considers on the second because the tag is overwritten. This could be a problem
-- Node randomly crashes
-
-
-- Possible problems with the algo
------- I think a simultaneous read and write could fail. If the read's RP finishes, after that the RP&WR of the write occurs. Now the read has an out-dated value of the register.
-
-"""
-
-class Monitor (process):
-  def setup(D,stop_flag:bool,scheduler):
-        pass
-
-  def receive(msg='stopExecution'):
-    stop_flag=False
-    
-
-  def run():
-    t=time.time()
-    while stop_flag:
-        -- y1            
-        if(time.time()==t+D):
-        	t=time.time()
-        	send("setValues",to=scheduler)
 
 class Node (process):
   def setup(known_nodes, scheduler):
@@ -277,7 +241,7 @@ class Node (process):
 # ----------------------------------------
 
 class Scheduler (process):
-  def setup(churn,Nt):
+  def setup():
       self.custom_config = configparser.ConfigParser()
       self.custom_config.read('config.ini') 
       self.nodes = new(Node, num=NUM_INIT_NODE)
@@ -296,19 +260,17 @@ class Scheduler (process):
       # A process is considered in-use of a request has been issued to it
       # for either a read or a write
       self.in_use = set()
-      #dictionary to store read or write issued command time
-      self.rwtime=dict()
       # read write timestamps to check the order
       self.readwriteorder = []
+      # enter leave times to check intervals of time
+      self.enterleaveorder = []
+      # churn events. List of all enter and leaves with
+      self.churnevents = []
       #### END Variable declarations
 
       self.replies = set()
       self.max_delay = float(self.custom_config["GENERAL"]["max_delay"])
       
-      self.monitor_process=new(Monitor,num=1)
-      setup(monitor_process,[0.05,True,self])
-      start(monitor_process)
-
       for p in nodes: setup(p, [nodes-{p}, self])
       start(nodes)
       output('nodes present initially are', nodes)
@@ -471,24 +433,44 @@ class Scheduler (process):
     await(received('done'))
     print_stats()
     output('scheduler terminating')
+    
+  def get_count_before(ts):
+    valid_events =  [x for x in enterleaveorder if x[0] < ts]
+    if valid_events:
+        # Get the count from the lastest event
+        return valid_events[-1][1]
+    else:
+        return NUM_INIT_NODE
 
+  def churn_allowed():
+      # Check the number of enter and leaves in current time - D
+      # If this is greater than alpha*N(t-D) don't allow churn
+      curtime = time.time()
+      prevtime = curtime - max_delay
+      nt = get_count_before(prevtime)
+      if nt*ALPHA > len(nodes)+1:
+        return False
+      else:
+        return True
+    
   def test_leave(p):
-      if churn > ALPHA*(Nt):
+      if not churn_allowed():
         output('NODE CANNOT LEAVE THE SYSTEM')
         return
+      enterleaveorder.append([time.time(), len(nodes)])
       send('leave-signal', to= p)
       nodes.remove(p)
       churn+=1
 
   def test_enter():
-      if churn > ALPHA*(Nt):
-        output('NEW NODE CANNOT ENTER THE SYSTEM' )
+      if not churn_allowed():
+        output("NEW NODE CANNOT ENTER THE SYSTEM")
         return
+      enterleaveorder.append([time.time(), len(nodes)])
       p = new(Node, [set(), self])
       start(p)
       nodes.add(p)
       timed_out = False
-      # if await(some(received('joined', from_=_p, clk=c), has= ('joined',p,c) not in replies)):
       if await(some(received('joined', from_=_p, clk=c), has= ('joined',p,c) not in replies)):
         churn+=1    #maybe has is present becuase some needs has 
       elif timeout(max_delay*4):
@@ -508,7 +490,6 @@ class Scheduler (process):
 
   def test_read(p):
       send('read', to= p)
-      rwtime[p] = time.time()
       if p in read_times:
         read_times[p].append(time.time())
       else:
@@ -516,8 +497,6 @@ class Scheduler (process):
       
   def receive(msg=('return',temp), from_=p):
       output('read returns with value ', temp)
-      interval=time.time()-rwtime[p]/D
-      rwtime[p]=interval
       read_times[p][-1] = time.time() - read_times[p][-1]
       # p is no longer in use, so remove it from the in_use set
       in_use.remove(p)
@@ -526,7 +505,6 @@ class Scheduler (process):
   def test_write(p,val):
       output('test write start')
       send(('write',val), to= p)
-      rwtime[p] = time.time()
       if p in write_times:
         write_times[p].append(time.time())
       else:
@@ -535,8 +513,6 @@ class Scheduler (process):
       
   def receive(msg=('ack'), from_=p):
       output('write returned an ack from: ', p)
-      interval=time.time()-rwtime[p]/D
-      rwtime[p]=interval
       write_times[p][-1] = time.time() - write_times[p][-1]
       # p is no longer in use, so remove it from the in_use set
       in_use.remove(p)
@@ -546,12 +522,6 @@ class Scheduler (process):
         join_times[pid] = time.time()
       send(m, to=nodes-crash_nodes)
 
-  def receive(msg='setValues'):
-       Nt=len(nodes)
-       t=time.time()
-       churn=0
-       if Nt<N_MIN:
-        output('SYSTEM SIZE BELOW NMIN')
        
   def receive(msg= ('writeupdatetime', num, wid, val), from_=pid):
     readwriteorder.append([num, wid,'write', pid, val])
@@ -563,8 +533,6 @@ class Scheduler (process):
       output('done received by scheduler')
       output('total nodes in the system',nodes)
       send('done', to= nodes)
-      send('stopExecution',to=monitor_process)
-      output(rwtime)
       output('scheduler sent done msgs to nodes', nodes)
 
 
@@ -576,10 +544,7 @@ class Scheduler (process):
 
 def main():
   config(clock = Lamport)
-  churn=0.0
-  Nt=10
-  scheduler = new(Scheduler,num=1)
-  setup(scheduler,[churn,Nt])
+  scheduler = new(Scheduler,[])
   start(scheduler)
   time.sleep(15)
   # instead of hard timelimit can we use other parameters to stop the system?
