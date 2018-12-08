@@ -264,8 +264,6 @@ class Scheduler (process):
       self.readwriteorder = []
       # enter leave times to check intervals of time
       self.enterleaveorder = []
-      # churn events. List of all enter and leaves with
-      self.churnevents = []
       #### END Variable declarations
 
       self.replies = set()
