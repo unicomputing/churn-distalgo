@@ -349,9 +349,23 @@ class Scheduler (process):
             break
         rounds-=1 
    
+  def test_condition_1_validity():
+    output("Testing if all present nodes joined within 4*D")
+    for pid in joined:
+      if join_times[p] > join_delay:
+        output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(p, join_times[p], join_delay))
+    entered_not_join = list(set(entered) - set(joined))
+    for pid in entered_not_join:
+      if pid in crash_nodes:
+        output("\nProcess {} crashed before joining".format(pid))
+      elif pid in left_nodes:
+         output("\nProcess {} left before joining".format(pid))
+      else:
+        output("\n###ERROR process never joined!!!")
+        
 
   def test_condition_1():
-    # Checking if the noumber th enodeoes of the node
+    # Test cases  for checking join eventually takes place for a node that never crashed or left 
     rounds= int(custom_config['GENERAL']['num_of_rounds'])
     while(rounds>0):
         output('ROUND NUMBER',rounds)
@@ -374,27 +388,6 @@ class Scheduler (process):
           send('sleep',to=p)
         # Bits to identify whether we randomly do a read of a write 
         # If we have a True as the o/p of random choice then we do a read
-        READ = True
-        WRITE = False
-        for x in range(int(custom_config["GENERAL"]["num_read_writes"])):
-          read_or_write = random.choice([True, False])
-          allowed_nodes = list(nodes-crash_nodes-in_use)
-          if allowed_nodes:
-            p = random.choice(allowed_nodes)
-            output('randomly chosen node is: ', p)
-            in_use.add(p)
-            if read_or_write == READ:
-              test_read(p)
-              output("Issuing a read command")
-            else:
-              val = random.randint(1,100)
-              output("Issuing a write command with value: ", val)
-              test_write(p, val)
-          else:
-            output("No nodes present to perform read or write operation")
-            output("Skipping one round...")
-            rounds-=1
-            break
         rounds-=1 
 
 
@@ -487,8 +480,9 @@ class Scheduler (process):
     
   def run():
     
-    #test_general_correctness()
-    test_condition_3()    
+    test_general_correctness()
+    # test_condition_3()    
+    # test_condition_1()
     output('Exited the loop')
     await(received('done'))
     print_stats()
@@ -535,8 +529,6 @@ class Scheduler (process):
       
   def receive(msg='joined', from_=p):
       join_times[p] = time.time() - join_times[p]
-      if join_times[p] > join_delay:
-        output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(p, join_times[p], join_delay))
       output('join operation completed for ', p)
 
   def test_read(p):
