@@ -81,12 +81,12 @@ class Node (process):
       return setof(q, ('enter',q) in Changes, ('leave',q) not in Changes)
 
   def receive(msg = ('enter',p)):
-      output('Received enter from',p)
+      #output('Received enter from',p)
       Changes.add(('enter',p))
       bcast('enter-echo', Changes, (val, num, w_id), is_joined, p)
 
   def receive(msg = ('enter-echo', C, (v, s, i), j, p)):
-      output('received enter-echo, checking,sequence number and id for process entering with process id',p)
+      #output('received enter-echo, checking,sequence number and id for process entering with process id',p)
       # Why does this need the ID
       i 
       Changes = Changes | C
@@ -106,10 +106,9 @@ class Node (process):
               bcast('joined',self)
 
   def receive(msg = ('joined', p)):
-      output('received joined message from process id',p)
+      #output('received joined message from process id',p)
       Changes.add(('join',p))
       Changes.add(('enter',p))
-      output('sending broadcast about process joined with id',p)
       bcast('joined-echo',p)
 
   def receive(msg = ('joined-echo',p)):
@@ -125,12 +124,12 @@ class Node (process):
       exit()
 
   def receive(msg = ('leave',p)):
-      output('received leave about process with id',p)
+      # output('received leave about process with id',p)
       Changes.add(('leave',p))
       bcast('leave-echo',p)
 
   def receive(msg = ('leave-echo',p)):
-      output('received leave-echo about process with id',p)
+      #output('received leave-echo about process with id',p)
       Changes.add(('leave',p))
 
   # ***************** methods for simulating reads and writes **************
@@ -183,7 +182,7 @@ class Node (process):
       if write_pending:
         # Required to calculate the total ordering
         send(('writeupdatetime', num, w_id, temp), to=scheduler)
-      output('updated vlaues are being sent as value,sequence,w_id',temp,num,w_id)
+      output('updated values are being sent as value,sequence,w_id',temp,num,w_id)
       rw_counter = 0
       wp_pending = True
 
@@ -226,7 +225,7 @@ class Node (process):
     time.sleep(int(custom_config['PERFORMANCE']['sleep_time_node']))
   	
   def receive(msg= 'done'):
-    output('exiting by done')
+    #output('exiting by done')
     exit()
 
 # ********** run *******************************
@@ -266,7 +265,6 @@ class Scheduler (process):
       self.enterleaveorder = []
       #### END Variable declarations
 
-      self.replies = set()
       self.max_delay = float(self.custom_config["GENERAL"]["max_delay"])
       
       for p in nodes: setup(p, [nodes-{p}, self])
@@ -294,6 +292,13 @@ class Scheduler (process):
 
         test_leave(p)
         test_enter()
+        test_enter()
+        test_enter()
+        test_enter()
+        test_enter()
+        test_enter()
+        test_enter()
+        
 
         p= random.choice(list(nodes))
         r=random.randint(1,10)              #crash with a random probability
@@ -466,21 +471,10 @@ class Scheduler (process):
       p = new(Node, [set(), self])
       start(p)
       nodes.add(p)
-      timed_out = False
-      if await(some(received('joined', from_=_p, clk=c), has= ('joined',p,c) not in replies)):
-        pass    #maybe has is present because some needs has
-      elif timeout(max_delay*4):
-        if max_delay:
-          timed_out = True
-        # checking if a node gets joined in 4*D time interval
-      # We already have the enter times, now they have joined. So we know how long it
-      # took to enter
+      
+  def receive(msg='joined', from_=p):
       join_times[p] = time.time() - join_times[p]
-      if timed_out:
-        output('\n###Process {} Join time exceeds maximum allowed delay {}\n'.format(p, join_times[p]))
-      output('join completed indication received', p, c)
-      replies.add(('joined',p,c))
-      output('the replies set is as follows',replies)
+      output('join completed indication received', p)
 
   def test_read(p):
       send('read', to= p)
