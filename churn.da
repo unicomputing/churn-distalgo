@@ -7,7 +7,7 @@ import sys
 ALPHA=0.05
 BETA = 0.6
 GAMMA = 0.6
-NUM_INIT_NODE = 15
+NUM_INIT_NODE = 35
 
 # ----------------------------------------
 # Node class
@@ -213,9 +213,7 @@ class Node (process):
     bcast('update-echo', (val, num, w_id))
 
   def receive(msg = ('query', rt, p)):
-#    print('====qeury', p, is_joined)
     if is_joined:
-#      print('====qeury', p)
       bcast('reply', (val, num, w_id), rt, p)
       #output('sent a reply message for query message with val ,num and w id as ',val, num, w_id)
 
@@ -293,8 +291,8 @@ class Scheduler (process):
         output("Process ", pid, " took ", join_times[pid], " seconds to join")
       else:
         output("Process ", pid, "never joined the system")
-    print(write_times)
-    print(read_times)
+    #print(write_times)
+    #print(read_times)
 
 
   def crash_node(p):
@@ -348,10 +346,15 @@ class Scheduler (process):
             rounds-=1
             break
         rounds-=1 
+        
+    # Introduce a small delay between two sends
+    if await(False):pass
+    elif timeout(30): output("Waited for 10 seconds")
+    check_condition_3_validity()
    
   def test_condition_1_validity():
     output("Testing if all present nodes joined within 4*D")
-    for pid in joined:
+    for p in joined:
       if join_times[p] > join_delay:
         output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(p, join_times[p], join_delay))
     entered_not_join = list(set(entered) - set(joined))
@@ -363,35 +366,11 @@ class Scheduler (process):
       else:
         output("\n###ERROR process never joined!!!")
         
+    
+  def anyof(s):
+        return next(iter(s)) if s else None
 
-  def test_condition_1():
-    # Test cases  for checking join eventually takes place for a node that never crashed or left 
-    rounds= int(custom_config['GENERAL']['num_of_rounds'])
-    while(rounds>0):
-        output('ROUND NUMBER',rounds)
-        p = random.choice(list(joined-crash_nodes))
-        output('randomly chosen node is', p)
-
-        test_leave(p)
-        test_enter()
-
-        p= random.choice(list(nodes))
-        r=random.randint(1,10)              #crash with a random with 90% probability
-        if (r>1):
-            crash_node(p)
-            output('Randomly chosen node to crash ',p)
-
-        r=random.randint(1,10)
-        if (r>0):
-          p=random.choice(list(nodes-crash_nodes))
-          output('Sending sleep to ',p)
-          send('sleep',to=p)
-        # Bits to identify whether we randomly do a read of a write 
-        # If we have a True as the o/p of random choice then we do a read
-        rounds-=1 
-
-
-  def test_condition_3():
+  def check_condition_3_validity():
     # The read and write operations are atomic:
     #there is an ordering of all completed reads and writes
     #and some subset of the uncompleted writes such that
@@ -403,43 +382,7 @@ class Scheduler (process):
     
     # The idea is the we keep testing our read and writes. A number of random reads and random writes.
     # Once we have that test to ensure that if a preceding write is complete, a read returns the correct values
-    
-    # Bits to identify whether we randomly do a read of a write 
-        # If we have a True as the o/p of random choice then we do a read
-    READ = True
-    WRITE = False
-    
-    # To simplify our testing we assuming that a value can be used exactly once and similarly
-    # every process is used once.
-    for x in range(int(custom_config["GENERAL"]["num_read_writes"])):
-      read_or_write = random.choice([True, False])
-      p = random.choice(list(nodes-in_use))
-      output('randomly chosen node is: ', p)
-      in_use.add(p)
-      in_use.add(p)
-      if read_or_write == READ:
-        test_read(p)
-        output("Issuing a read command")
-      else:
-        # Keep looping till we see a new value
-        val = random.randint(1,1000)
-        output("Issuing a write command with value: ", val)
-        test_write(p, val)
-      # Introduce a small delay between two sends
-      if await(False):pass
-      elif timeout(0.1): output("Waited for 0.1 seconds")
-     
-    output("Waiting 5 seconds for all responses to arrive before checking")    
-    # Introduce a small delay between two sends
-    if await(False):pass
-    elif timeout(10): output("Waited for 10 seconds")
-
-    check_condition_3_validity()
-    
-  def anyof(s):
-        return next(iter(s)) if s else None
-
-  def check_condition_3_validity():
+  
     # Now that we have made out read and writes, we check the schedulers 
     # received queue to check whether the data returned is ordered correctly.
     
@@ -481,12 +424,10 @@ class Scheduler (process):
   def run():
     
     test_general_correctness()
-    # test_condition_3()    
-    # test_condition_1()
     output('Exited the loop')
     await(received('done'))
+    test_condition_2()
     print_stats()
-    check_condition_2()
     output('scheduler terminating')
     
   def get_count_before(ts):
@@ -577,7 +518,7 @@ class Scheduler (process):
     readwriteorder.append([num, wid, 'readend', pid, val])
 
 
-  def check_condition_2():    # read and write for a non-failed, non-crashed node should be completed within 2D
+  def test_condition_2():    # read and write for a non-failed, non-crashed node should be completed within 2D
     D=6
     output("Outputting craashed niodes", crash_nodes)
     output("printing read write times")
@@ -613,7 +554,6 @@ class Scheduler (process):
       output('done received by scheduler')
       output('total nodes in the system',nodes)
       send('done', to= nodes)
-      output('scheduler sent done msgs to nodes', nodes)
 
  
 
@@ -625,14 +565,14 @@ class Scheduler (process):
 
 
 def main():
-  START_TIME= time.localtime( time.time())[5]
+  START_TIME= time.time()
   config(clock = Lamport)
   scheduler = new(Scheduler,[])
   start(scheduler)
-  time.sleep(15)
+  time.sleep(45)
   # instead of hard timelimit can we use other parameters to stop the system?
   send('done', to= scheduler)
   output('sent done to schedule')
-  output( "total run time of the  system",time.localtime( time.time() )[5]-START_TIME)
+  output( "total run time of the  system", time.time()-START_TIME)
 
   
