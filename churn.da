@@ -294,7 +294,6 @@ class Scheduler (process):
 
         test_leave(p)
         test_enter()
-       # test_enter()
 
         p= random.choice(list(nodes))
         r=random.randint(1,10)              #crash with a random probability
@@ -425,8 +424,8 @@ class Scheduler (process):
     
   def run():
     
-    #test_general_correctness()
-    test_condition_3()        
+    test_general_correctness()
+    #test_condition_3()    
     output('Exited the loop')
     await(received('done'))
     print_stats()
@@ -458,7 +457,6 @@ class Scheduler (process):
       enterleaveorder.append([time.time(), len(nodes)])
       send('leave-signal', to= p)
       nodes.remove(p)
-      churn+=1
 
   def test_enter():
       if not churn_allowed():
@@ -470,18 +468,16 @@ class Scheduler (process):
       nodes.add(p)
       timed_out = False
       if await(some(received('joined', from_=_p, clk=c), has= ('joined',p,c) not in replies)):
-        churn+=1    #maybe has is present becuase some needs has 
+        pass    #maybe has is present because some needs has
       elif timeout(max_delay*4):
         if max_delay:
           timed_out = True
         # checking if a node gets joined in 4*D time interval
-        
-
       # We already have the enter times, now they have joined. So we know how long it
       # took to enter
       join_times[p] = time.time() - join_times[p]
       if timed_out:
-        output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(p, join_times[p]))
+        output('\n###Process {} Join time exceeds maximum allowed delay {}\n'.format(p, join_times[p]))
       output('join completed indication received', p, c)
       replies.add(('joined',p,c))
       output('the replies set is as follows',replies)
