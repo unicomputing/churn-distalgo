@@ -660,7 +660,7 @@ def main():
   config(clock = Lamport)
   scheduler = new(Scheduler,[])
   start(scheduler)
-  time.sleep(25)
+  time.sleep(15)
   # instead of hard timelimit can we use other parameters to stop the system?
   send('done', to= scheduler)
   output('sent done to schedule')
