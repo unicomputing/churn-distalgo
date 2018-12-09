@@ -264,7 +264,6 @@ class Scheduler (process):
       # enter leave times to check intervals of time
       self.enterleaveorder = []
       #### END Variable declarations
-
       self.max_delay = float(self.custom_config["GENERAL"]["max_delay"])
       
       for p in nodes: setup(p, [nodes-{p}, self])
