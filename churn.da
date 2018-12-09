@@ -6,7 +6,7 @@ import json
 ALPHA=0.05
 BETA = 0.6
 GAMMA = 0.6
-NUM_INIT_NODE = 15
+NUM_INIT_NODE = 20
 
 # ----------------------------------------
 # Node class
@@ -300,6 +300,7 @@ class Scheduler (process):
 
         test_leave(p)
         test_enter()
+<<<<<<< HEAD
         # test_enter()
         # test_enter()
         # test_enter()
@@ -307,6 +308,9 @@ class Scheduler (process):
         # test_enter()
         # test_enter()
         
+=======
+        test_enter()
+>>>>>>> e4df6b6c27eec7a9ed4e981317ee77a38c29b1c0
 
         p= random.choice(list(nodes))
         r=random.randint(1,10)              #crash with a random probability
@@ -452,13 +456,17 @@ class Scheduler (process):
     else:
         return NUM_INIT_NODE
 
+  def get_event_count_in(start, end):
+      ret=[x for x in enterleaveorder if x[0]<end and x[0] > start]
+      return len(ret)
+
   def churn_allowed():
       # Check the number of enter and leaves in current time - D
       # If this is greater than alpha*N(t-D) don't allow churn
       curtime = time.time()
       prevtime = curtime - max_delay
       nt = get_count_before(prevtime)
-      if nt*ALPHA > len(nodes)+1:
+      if nt*ALPHA < (get_event_count_in(prevtime, curtime)+1):
         return False
       else:
         return True
