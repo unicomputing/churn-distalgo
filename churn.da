@@ -300,17 +300,12 @@ class Scheduler (process):
 
         test_leave(p)
         test_enter()
-<<<<<<< HEAD
         # test_enter()
         # test_enter()
         # test_enter()
         # test_enter()
         # test_enter()
         # test_enter()
-        
-=======
-        test_enter()
->>>>>>> e4df6b6c27eec7a9ed4e981317ee77a38c29b1c0
 
         p= random.choice(list(nodes))
         r=random.randint(1,10)              #crash with a random probability
@@ -353,7 +348,66 @@ class Scheduler (process):
             break
         rounds-=1 
    
-   
+
+  def test_condition_1():
+    # Checking if the noumber th enodeoes of the node
+    rounds= int(custom_config['GENERAL']['num_of_rounds'])
+    while(rounds>0):
+        output('ROUND NUMBER',rounds)
+        p = random.choice(list(joined-crash_nodes))
+        output('randomly chosen node is', p)
+
+        test_leave(p)
+        test_enter()
+        # test_enter()
+        # test_enter()
+        # test_enter()
+        # test_enter()
+        # test_enter()
+        # test_enter()
+
+        p= random.choice(list(nodes))
+        r=random.randint(1,10)              #crash with a random probability
+        if (r>1):
+            crash_node(p)
+            output('Randomly chosen node to crash ',p)
+
+        r=random.randint(1,10)
+        if (r>0):
+          p=random.choice(list(nodes-crash_nodes))
+          output('Sending sleep to ',p)
+          send('sleep',to=p)
+        p= random.choice(list(nodes))
+        r=random.randint(1,10)              #crash with a random probability
+        if (r>1):
+          crash_node(p)
+          output('Randomly chosen node to crash ',p)      
+        # Bits to identify whether we randomly do a read of a write 
+        # If we have a True as the o/p of random choice then we do a read
+        READ = True
+        WRITE = False
+        for x in range(int(custom_config["GENERAL"]["num_read_writes"])):
+          read_or_write = random.choice([True, False])
+          allowed_nodes = list(nodes-crash_nodes-in_use)
+          if allowed_nodes:
+            p = random.choice(allowed_nodes)
+            output('randomly chosen node is: ', p)
+            in_use.add(p)
+            if read_or_write == READ:
+              test_read(p)
+              output("Issuing a read command")
+            else:
+              val = random.randint(1,100)
+              output("Issuing a write command with value: ", val)
+              test_write(p, val)
+          else:
+            output("No nodes present to perform read or write operation")
+            output("Skipping one round...")
+            rounds-=1
+            break
+        rounds-=1 
+
+
   def test_condition_3():
     # The read and write operations are atomic:
     #there is an ordering of all completed reads and writes
