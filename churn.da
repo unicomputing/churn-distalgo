@@ -7,7 +7,7 @@ import sys
 ALPHA=0.05
 BETA = 0.6
 GAMMA = 0.6
-NUM_INIT_NODE = 20
+NUM_INIT_NODE = 15
 
 # ----------------------------------------
 # Node class
@@ -258,7 +258,7 @@ class Scheduler (process):
       self.write_times = {} 
       # A map with process_id -> [time_taken_to_read]
       self.read_times={}
-      # to keep a track of crashed nodes 
+      # to keep a track of crashed nodes. Crash nodes are the failed nodes that scheduler doesn't know about. 
       self.crash_nodes=set()
       # to keep a track of left nodes 
       self.left_nodes=set()
@@ -269,7 +269,14 @@ class Scheduler (process):
       self.readwriteorder = []
       # enter leave times to check intervals of time
       self.enterleaveorder = []
+
       # max allowed delay for one message
+
+      #### END Variable declarations
+      self.condition2={}
+      ## to check if each read and write are completed in 2D
+
+
       self.max_delay = float(self.custom_config["GENERAL"]["max_delay"])
       # delay adjustment to account for cpu time
       self.delay_adjustment = float(self.custom_config["GENERAL"]["delay_adjustment"])
@@ -289,6 +296,7 @@ class Scheduler (process):
     print(write_times)
     print(read_times)
 
+
   def crash_node(p):
   	crash_nodes.add(p)
 
@@ -303,25 +311,27 @@ class Scheduler (process):
 
         test_leave(p)
         test_enter()
-        # test_enter()
-        # test_enter()
-        # test_enter()
-        # test_enter()
-        # test_enter()
-        # test_enter()
+        test_enter()
+        test_enter()
+        test_enter()
+        test_enter()
+        test_enter()
+        test_enter()
+        
 
-        p= random.choice(list(nodes))
+
+        p= random.choice(list(nodes-crash_nodes))
         r=random.randint(1,10)              #crash with a random probability
         if (r>1):
       	    crash_node(p)
       	    output('Randomly chosen node to crash ',p)
 
         r=random.randint(1,10)
-        if (r>0):
+        if (r>0):                           #simulating network delay for a random node
           p=random.choice(list(nodes-crash_nodes))
           output('Sending sleep to ',p)
           send('sleep',to=p)
-        p= random.choice(list(nodes))
+        p= random.choice(list(nodes-crash_nodes))
         r=random.randint(1,10)              #crash with a random probability
         if (r>1):
           crash_node(p)
@@ -345,7 +355,7 @@ class Scheduler (process):
               output("Issuing a write command with value: ", val)
               test_write(p, val)
           else:
-            output("No nodes present to perform read or write operation")
+            output("No nodes present to perform read or write operation")      
             output("Skipping one round...")
             rounds-=1
             break
@@ -505,6 +515,7 @@ class Scheduler (process):
     output('Exited the loop')
     await(received('done'))
     print_stats()
+    check_condition_2()
     output('scheduler terminating')
     
   def get_count_before(ts):
@@ -515,17 +526,13 @@ class Scheduler (process):
     else:
         return NUM_INIT_NODE
 
-  def get_event_count_in(start, end):
-      ret=[x for x in enterleaveorder if x[0]<end and x[0] > start]
-      return len(ret)
-
   def churn_allowed():
       # Check the number of enter and leaves in current time - D
       # If this is greater than alpha*N(t-D) don't allow churn
       curtime = time.time()
       prevtime = curtime - max_delay
       nt = get_count_before(prevtime)
-      if nt*ALPHA < (get_event_count_in(prevtime, curtime)+1):
+      if nt*ALPHA > len(nodes)+1:
         return False
       else:
         return True
@@ -561,6 +568,7 @@ class Scheduler (process):
         read_times[p].append(time.time())
       else:
         read_times[p] = [time.time()]
+
       
   def receive(msg=('return',temp), from_=p):
       output('read returns with value ', temp)
@@ -599,11 +607,46 @@ class Scheduler (process):
   def receive(msg=('readendtime', num, wid, val), from_=pid):
     readwriteorder.append([num, wid, 'readend', pid, val])
 
+
+  def check_condition_2():    # read and write for a non-failed, non-crashed node should be completed within 2D
+    D=6
+    output("Outputting craashed niodes", crash_nodes)
+    output("printing read write times")
+    for i in read_times:
+        print("Process is", i)
+        if i in crash_nodes:
+            output("Continuing for process: ", i)
+            continue
+        output("for a node with id ",i)
+        for j in read_times[i]:
+            print(" node id, total read time",i,j)
+            if i in condition2:
+                condition2[i].append((j)/D)
+            else:
+                condition2[i]=[(j)/D]
+    output("Finished reads, doing writes")
+    for i in write_times:
+        if i in crash_nodes:
+            continue
+        output("for a node with id ",i)
+        for j in write_times[i]:
+            print(" node id, total write time",i,j)
+            if i in condition2:
+                condition2[i].append((j)/D)
+            else:
+                condition2[i]=[(j)/D]
+    print(condition2)
+  
+
+
+
   def receive(msg = 'done'):
       output('done received by scheduler')
       output('total nodes in the system',nodes)
       send('done', to= nodes)
       output('scheduler sent done msgs to nodes', nodes)
+
+ 
 
 
 # ----------------------------------------
@@ -613,12 +656,14 @@ class Scheduler (process):
 
 
 def main():
+  START_TIME= time.localtime( time.time())[5]
   config(clock = Lamport)
   scheduler = new(Scheduler,[])
   start(scheduler)
-  time.sleep(15)
+  time.sleep(25)
   # instead of hard timelimit can we use other parameters to stop the system?
   send('done', to= scheduler)
   output('sent done to schedule')
+  output( "total run time of the  system",time.localtime( time.time() )[5]-START_TIME)
 
   
