@@ -311,16 +311,9 @@ class Scheduler (process):
 
         test_leave(p)
         test_enter()
-        test_enter()
-        test_enter()
-        test_enter()
-        test_enter()
-        test_enter()
-        test_enter()
-        
-
 
         p= random.choice(list(nodes-crash_nodes))
+
         r=random.randint(1,10)              #crash with a random probability
         if (r>1):
       	    crash_node(p)
@@ -330,12 +323,7 @@ class Scheduler (process):
         if (r>0):                           #simulating network delay for a random node
           p=random.choice(list(nodes-crash_nodes))
           output('Sending sleep to ',p)
-          send('sleep',to=p)
-        p= random.choice(list(nodes-crash_nodes))
-        r=random.randint(1,10)              #crash with a random probability
-        if (r>1):
-          crash_node(p)
-          output('Randomly chosen node to crash ',p)      
+          send('sleep',to=p)     
         # Bits to identify whether we randomly do a read of a write 
         # If we have a True as the o/p of random choice then we do a read
         READ = True
@@ -372,15 +360,9 @@ class Scheduler (process):
 
         test_leave(p)
         test_enter()
-        # test_enter()
-        # test_enter()
-        # test_enter()
-        # test_enter()
-        # test_enter()
-        # test_enter()
 
         p= random.choice(list(nodes))
-        r=random.randint(1,10)              #crash with a random probability
+        r=random.randint(1,10)              #crash with a random with 90% probability
         if (r>1):
             crash_node(p)
             output('Randomly chosen node to crash ',p)
@@ -390,11 +372,6 @@ class Scheduler (process):
           p=random.choice(list(nodes-crash_nodes))
           output('Sending sleep to ',p)
           send('sleep',to=p)
-        p= random.choice(list(nodes))
-        r=random.randint(1,10)              #crash with a random probability
-        if (r>1):
-          crash_node(p)
-          output('Randomly chosen node to crash ',p)      
         # Bits to identify whether we randomly do a read of a write 
         # If we have a True as the o/p of random choice then we do a read
         READ = True
