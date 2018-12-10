@@ -86,8 +86,8 @@ class Node (process):
 
   def delayed_send(m, rec):
     # Simulating real network by introducing random delay for each message transmission
-    # --Reference: Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
-    # "Simulating a Shared Register in a System that Never Stops Changing", August 26, 2018.arXiv:1708.03274 [cs.DC].p2
+    # Reference: arXiv:1708.03274 [cs.DC] Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
+    # "Simulating a Shared Register in a System that Never Stops Changing", August 26, 2018.page 2, para 4 line 3
     delay = random.randint(0, float(custom_config["GENERAL"]["max_delay"])*100)/100
     if await(False):pass
     elif timeout(delay): pass
@@ -419,6 +419,8 @@ class Scheduler (process):
 
 
   def test_condition_1_invariant():
+    # Reference: arXiv:1708.03274 [cs.DC] Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
+    # "Emulating a Shared Register in a System that Never Stops Changing", August, 2015.page 3, para 6, point 1
     error_found = False
     output("Testing join times of nodes")
     for pid in join_times:
@@ -489,8 +491,7 @@ class Scheduler (process):
   
     # Now that we have made out read and writes, we check the schedulers 
     # received queue to check whether the data returned is ordered correctly.
-    
-    
+
     output("Read write order is: ", readwriteorder)    
     def getPreviousWrite(readwrites):
         # Search for the first write from the end
@@ -658,7 +659,8 @@ class Scheduler (process):
     readwriteorder.append([num, wid, 'readend', pid, val])
 
 
-  def check_condition_2():    # read and write for a non-failed, non-crashed node should be completed within 2D
+  def check_condition_2():
+    # read and write for a non-failed, non-crashed node should be completed within 2D
     D=max_delay
     output("Outputting crashed nodes", crash_nodes)
     writetbl = [["Process ID", "Write Time", "Reason"]]
