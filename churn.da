@@ -9,6 +9,10 @@ ALPHA=0.1
 BETA = 0.6
 GAMMA = 0.6
 NUM_INIT_NODE = 20
+<<<<<<< HEAD
+=======
+DELTA = 0.33
+>>>>>>> upper bound on delta
 
 # ----------------------------------------
 # Node class
@@ -267,7 +271,8 @@ class Scheduler (process):
       self.readwriteorder = []
       # enter leave times to check intervals of time
       self.enterleaveorder = []
-
+      # crash nodes order to check intervals of time
+      self.crashorder = []
       # max allowed delay for one message
 
       #### END Variable declarations
@@ -299,6 +304,7 @@ class Scheduler (process):
 
 
   def crash_node(p):
+<<<<<<< HEAD
   	crash_nodes.add(p)
     
     
@@ -312,6 +318,13 @@ class Scheduler (process):
             output('randomly chosen node is', p)
             test_leave(p)
     
+=======
+    if crash_allowed():
+      crash_nodes.add(p)
+    else:
+      output('NODE NOT ALLOWED TO FAIL')
+      return None
+>>>>>>> upper bound on delta
 
   def test_consistency():
     # Just a bunch random tests. Here we go completely crazy and 
@@ -387,10 +400,11 @@ class Scheduler (process):
         r=random.randint(1,4) 
         if r==1:          
           p = test_enter()
-          output('Making a node leave before joining', p)
-          # allow the enter message to be received
-          time.sleep(max_delay)
-          test_leave(p)
+          if p:
+            output('Making a node leave before joining', p)
+            # allow the enter message to be received
+            time.sleep(max_delay)
+            test_leave(p)
 
         elif r==2:        
           p = test_enter()
@@ -463,8 +477,14 @@ class Scheduler (process):
     
   def run():
     
+<<<<<<< HEAD
     test_consistency()
     check_condition_1()
+=======
+    test_general_correctness()
+    # test_condition_3()    
+    # check_condition_1()
+>>>>>>> upper bound on delta
     output('Exited the loop')
     await(received('done'))
     check_condition_3()
@@ -481,10 +501,24 @@ class Scheduler (process):
     else:
         return NUM_INIT_NODE
 
+<<<<<<< HEAD
   def get_event_count_in(start, end):
       ret=[x for x in enterleaveorder if x[0]<end and x[0] > start]
       return len(ret)      
         
+=======
+  def crash_allowed():
+    # Check the number of crash in current time - D
+    # If this is greater than delta*N(t-D) don't allow failure
+    curtime = time.time()
+    prevtime = curtime - max_delay
+    nt = get_count_before(prevtime)
+    if nt*DELTA > len(crash_nodes)+1:
+      return False
+    else:
+      return True
+
+>>>>>>> upper bound on delta
   def churn_allowed():
       # Check the number of enter and leaves in current time - D
       # If this is greater than alpha*N(t-D) don't allow churn
@@ -499,17 +533,20 @@ class Scheduler (process):
   def test_leave(p):
       if not churn_allowed():
         output('NODE CANNOT LEAVE THE SYSTEM')
-        return
+        return None 
       enterleaveorder.append([time.time(), len(nodes)])
       send('leave-signal', to= p)
       output('making {0} node leave'.format(p))
       left_nodes.add(p)
       nodes.remove(p)
+      return p
 
   def test_enter():
+      # returns the pid of the node entering, 'None' if system 
+      # doesn't allow enter.
       if not churn_allowed():
         output("NEW NODE CANNOT ENTER THE SYSTEM")
-        return
+        return None
       enterleaveorder.append([time.time(), len(nodes)])
       p = new(Node, [set(), self])
       start(p)
