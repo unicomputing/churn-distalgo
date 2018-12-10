@@ -1,13 +1,14 @@
 import random
 import time
 import configparser 
-import json
 import sys
+import statistics
+from tabulate import tabulate
 
-ALPHA=0.05
+ALPHA=0.1
 BETA = 0.6
 GAMMA = 0.6
-NUM_INIT_NODE = 35
+NUM_INIT_NODE = 20
 
 # ----------------------------------------
 # Node class
@@ -233,7 +234,6 @@ class Node (process):
 # ********** run *******************************
 
   def run():
-#    output(self, 'running')
     await(False) # Wait till the condition is true
     output('node', self, 'at end of run')
 
@@ -286,33 +286,41 @@ class Scheduler (process):
       output('nodes present initially are', nodes)
       
   def print_stats():
+    table = [["Process ID", "Join Time", "Reason"]]
     for pid in join_times:
-      if pid in joined:
-        output("Process ", pid, " took ", join_times[pid], " seconds to join")
+      if pid in joined and join_times[pid] < 8*max_delay+100:
+        table.append([pid, join_times[pid], "-"])
       else:
-        output("Process ", pid, "never joined the system")
-    if write_times:
-      print(write_times)
-    if read_times:
-      print(read_times)
+        if pid in crash_nodes:
+            table.append([pid, "-", "CRASHED"])
+        elif pid in left_nodes:
+            table.append([pid, "-", "LEFT"])
+    print(tabulate(table, headers="firstrow", tablefmt="grid"))
 
 
   def crash_node(p):
   	crash_nodes.add(p)
+    
+    
+  def churn_random_nodes(count):
+    for _ in range(count):
+        test_enter()
+        if random.choice(["enter", "leave"]) == "enter":
+            test_enter()
+        else:
+            p = random.choice(list(joined-left_nodes-crash_nodes))
+            output('randomly chosen node is', p)
+            test_leave(p)
+    
 
-  def test_general_correctness():
+  def test_consistency():
     # Just a bunch random tests. Here we go completely crazy and 
     # make things crazy
     rounds= int(custom_config['GENERAL']['num_of_rounds'])
     for i in range(rounds):
         output('ROUND NUMBER:',i)
-        p = random.choice(list(joined-crash_nodes))
-        output('randomly chosen node is', p)
-
-        test_leave(p)
-        test_enter()
-
-        p= random.choice(list(nodes-crash_nodes))
+        churn_random_nodes(int(custom_config['GENERAL']['churn_count']))
+        p= random.choice(list(nodes-left_nodes-crash_nodes))
 
         r=random.randint(1,10)              #crash with a random probability
         if (r>1):
@@ -321,7 +329,7 @@ class Scheduler (process):
 
         r=random.randint(1,10)
         if (r>0):                           #simulating network delay for a random node
-          p=random.choice(list(nodes-crash_nodes))
+          p=random.choice(list(nodes-left_nodes-crash_nodes))
           output('Sending sleep to ',p)
           send('sleep',to=p)     
         # Bits to identify whether we randomly do a read of a write 
@@ -330,7 +338,7 @@ class Scheduler (process):
         WRITE = False
         for x in range(int(custom_config["GENERAL"]["num_read_writes"])):
           read_or_write = random.choice([True, False])
-          allowed_nodes = list(nodes-crash_nodes-in_use)
+          allowed_nodes = list(nodes-left_nodes-crash_nodes-in_use)
           if allowed_nodes:
             p = random.choice(allowed_nodes)
             output('randomly chosen node is: ', p)
@@ -347,11 +355,6 @@ class Scheduler (process):
             output("Skipping one round...")
             rounds-=1
             break
-        
-    # Introduce a small delay between two sends
-    if await(False):pass
-    elif timeout(30): output("Waited for 10 seconds")
-    check_condition_3_validity()
    
   def test_condition_1_invariant():
     error_found = False
@@ -375,7 +378,6 @@ class Scheduler (process):
     
   def anyof(s):
         return next(iter(s)) if s else None
-
 
   def check_condition_1():
     # Test cases  for checking join eventually takes place for a node that never crashed or left 
@@ -408,7 +410,7 @@ class Scheduler (process):
           output('Nothing to do in this round') 
 
 
-  def check_condition_3_validity():
+  def check_condition_3():
     # The read and write operations are atomic:
     #there is an ordering of all completed reads and writes
     #and some subset of the uncompleted writes such that
@@ -461,11 +463,11 @@ class Scheduler (process):
     
   def run():
     
-    # test_general_correctness()
-    # test_condition_3()    
+    test_consistency()
     check_condition_1()
     output('Exited the loop')
     await(received('done'))
+    check_condition_3()
     test_condition_1_invariant()
     check_condition_2()
     print_stats()
@@ -479,13 +481,17 @@ class Scheduler (process):
     else:
         return NUM_INIT_NODE
 
+  def get_event_count_in(start, end):
+      ret=[x for x in enterleaveorder if x[0]<end and x[0] > start]
+      return len(ret)      
+        
   def churn_allowed():
       # Check the number of enter and leaves in current time - D
       # If this is greater than alpha*N(t-D) don't allow churn
       curtime = time.time()
       prevtime = curtime - max_delay
       nt = get_count_before(prevtime)
-      if nt*ALPHA > len(nodes)+1:
+      if nt*ALPHA < (get_event_count_in(prevtime, curtime)+1):
         return False
       else:
         return True
@@ -562,35 +568,28 @@ class Scheduler (process):
 
 
   def check_condition_2():    # read and write for a non-failed, non-crashed node should be completed within 2D
-    D=6
+    D=max_delay
     output("Outputting crashed nodes", crash_nodes)
-    output("printing read write times")
+    writetbl = [["Process ID", "Write Time", "Reason"]]
+    readtbl = [["Process ID", "Read Time", "Reason"]]
     for i in read_times:
-        print("Process is", i)
         if i in crash_nodes:
-            output("Continuing for process: ", i)
+            readtbl.append([i, "-", "Crashed"])
             continue
-        output("for a node with id ",i)
-        for j in read_times[i]:
-            print(" node id, total read time",i,j)
-            if i in condition2:
-                condition2[i].append((j)/D)
-            else:
-                condition2[i]=[(j)/D]
-    output("Finished reads, doing writes")
+        elif i in left_nodes:
+            readtbl.append([i, "-", "Left"])
+            continue
+        readtbl.append([i, statistics.mean(read_times[i]), "-"])
     for i in write_times:
         if i in crash_nodes:
+            writetbl.append([i, "-", "Crashed"])
             continue
-        output("for a node with id ",i)
-        for j in write_times[i]:
-            print(" node id, total write time",i,j)
-            if i in condition2:
-                condition2[i].append((j)/D)
-            else:
-                condition2[i]=[(j)/D]
-    if condition2:
-      print(condition2)
-  
+        elif i in left_nodes:
+            writetbl.append([i, "-", "Left"])
+            continue
+        writetbl.append([i, statistics.mean(write_times[i]), "-"])
+    print(tabulate(writetbl, headers="firstrow", tablefmt="grid"))
+    print(tabulate(readtbl, headers="firstrow", tablefmt="grid"))
 
 
 
@@ -613,7 +612,7 @@ def main():
   config(clock = Lamport)
   scheduler = new(Scheduler,[])
   start(scheduler)
-  time.sleep(45)
+  time.sleep(80)
   # instead of hard timelimit can we use other parameters to stop the system?
   send('done', to= scheduler)
   output('sent done to schedule')
