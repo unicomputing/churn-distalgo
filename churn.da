@@ -6,20 +6,12 @@ import statistics
 from tabulate import tabulate
 import csv
 
-#DEFAULT VALUES
-ALPHA=0.1
-BETA = 0.6
-GAMMA = 0.6
-NUM_INIT_NODE = 20
-DELTA = 0.33
-D = None
-
 
 # ---------------------------------------- #
 #                NODE CLASS                #
 # ---------------------------------------- #
 class Node (process):
-  def setup(known_nodes, scheduler):
+  def setup(known_nodes, scheduler, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D):
     self.custom_config = configparser.ConfigParser()
     self.custom_config.read('config.ini')
 
@@ -88,7 +80,7 @@ class Node (process):
     # Simulating real network by introducing random delay for each message transmission
     # Reference: arXiv:1708.03274 [cs.DC] Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
     # "Simulating a Shared Register in a System that Never Stops Changing", August 26, 2018.page 2, para 4 line 3
-    delay = random.randint(0, float(custom_config["GENERAL"]["max_delay"])*100)/100
+    delay = random.randint(0, float(D)*100)/100
     if await(False):pass
     elif timeout(delay): pass
     send(m, to=rec)
@@ -119,7 +111,7 @@ class Node (process):
       if (not is_joined) and (p == self):
           if (j == True) and (join_bound == 0):
               #since we are counting join_bound on basis of info from an already joined node
-              join_bound = GAMMA * len(Present())
+              join_bound = float(GAMMA) * len(Present())
               output('join_bound set to', join_bound, 'based on Present size of', len(Present()))
           join_counter += 1
           if (join_counter >= join_bound) and (join_bound > 0):
@@ -195,7 +187,7 @@ class Node (process):
       output('begin read phase')
       tag += 1
       bcast('query', tag, self)
-      rw_bound = BETA * len(Members())
+      rw_bound = float(BETA) * len(Members())
       output('rw_bound set to', rw_bound, 'based on Members size of', len(Members()))
       # in case of multiple reads this helps in differentiating reads and associated counter
       rw_counter = 0
@@ -293,10 +285,10 @@ class Node (process):
 #             SCHEDULER CLASS              #
 # ---------------------------------------- #
 class Scheduler (process):
-  def setup():
+  def setup(ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D):
       self.custom_config = configparser.ConfigParser()
       self.custom_config.read('config.ini') 
-      self.nodes = new(Node, num=NUM_INIT_NODE)
+      self.nodes = new(Node, num=int(NUM_INIT_NODE))
       #### Variable declarations
       self.allnodes = nodes
       self.joined = nodes
@@ -326,8 +318,7 @@ class Scheduler (process):
       self.condition2={}
       ## to check if each read and write are completed in 2D
 
-
-      self.max_delay = float(self.custom_config["GENERAL"]["max_delay"])
+      self.max_delay = float(D)
       # delay adjustment to account for cpu time
       self.delay_adjustment = float(self.custom_config["GENERAL"]["delay_adjustment"])
       #### END Variable declarations
@@ -336,7 +327,7 @@ class Scheduler (process):
       self.f = open("results.csv", "a")
       self.WRITER = csv.writer(f, delimiter=",")
       
-      for p in nodes: setup(p, [nodes-{p}, self])
+      for p in nodes: setup(p, [nodes-{p}, self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
       start(nodes)
       output('nodes present initially are', nodes)
 
@@ -497,7 +488,7 @@ class Scheduler (process):
         # Search for the first write from the end
         for item in reversed(readwrites):
             if item[0] == "write":
-                return item  
+                return item
     def getFirstValReturnedByProcess(readwrites, pid):
         # Get the value of return for the corresponding read start.
 
@@ -547,7 +538,7 @@ class Scheduler (process):
         # Get the count from the lastest event
         return valid_events[-1][1]
     else:
-        return NUM_INIT_NODE
+        return int(NUM_INIT_NODE)
 
 
   def get_event_count_in(start, end):
@@ -561,7 +552,7 @@ class Scheduler (process):
     curtime = time.time()
     prevtime = curtime - max_delay
     nt = get_count_before(prevtime)
-    if nt*DELTA > len(crash_nodes)+1:
+    if nt*float(DELTA) > len(crash_nodes)+1:
       return False
     else:
       return True
@@ -573,7 +564,7 @@ class Scheduler (process):
       curtime = time.time()
       prevtime = curtime - max_delay
       nt = get_count_before(prevtime)
-      if nt*ALPHA < (get_event_count_in(prevtime, curtime)+1):
+      if nt*float(ALPHA) < (get_event_count_in(prevtime, curtime)+1):
         return False
       else:
         return True
@@ -705,8 +696,11 @@ class Scheduler (process):
       output("TO / Writing to file")
       l = list(setof(ct, received(('cputime', ct))))
     output("Writing to file")
-    output("l is ", l)
-    WRITER.writerow([statistics.mean(l), statistics.mean(goodreads), statistics.mean(goodwrites), statistics.mean(goodjoins)])
+    a = statistics.mean(l) if l else 0
+    b = statistics.mean(goodreads) if goodreads else 0
+    c = statistics.mean(goodwrites) if goodwrites else 0
+    d = statistics.mean(goodjoins) if goodjoins else 0
+    WRITER.writerow([a, b, c, d])
 
   def receive(msg = 'done'):
       -- fds
@@ -726,6 +720,7 @@ def reset_globals(cc):
     GAMMA = cc["GAMMA"]["default"]
     NUM_NODES = cc["NODE_COUNT"]["default"]
     D = cc["D"]["default"]
+    return ALPHA, BETA, GAMMA, DELTA, NUM_NODES, D
 
 
 # ---------------------------------------- #
@@ -740,8 +735,8 @@ def main():
   WRITER.writerow(["CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
   custom_config = configparser.ConfigParser()
   custom_config.read('config.ini')
-  reset_globals(custom_config)
-  #global ALPHA, BETA, GAMMA, NUM_INIT_NODE, DELTA, D
+  ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D = reset_globals(custom_config)
+  output("D is", D)
   #####################################################################################
   ## Test Alpha
   #####################################################################################
@@ -751,7 +746,7 @@ def main():
       WRITER.writerow(["************Starting new************"])
       WRITER.writerow([ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
       f.close()
-      scheduler = new(Scheduler,[])
+      scheduler = new(Scheduler,[str(ALPHA), BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
       start(scheduler)
       time.sleep(40)
       send('done', to= scheduler)
