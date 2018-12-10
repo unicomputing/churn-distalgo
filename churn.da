@@ -733,6 +733,7 @@ def main():
   WRITER = csv.writer(f, delimiter=",")
   WRITER.writerow(["ALPHA", "BETA", "GAMMA", "DELTA", "NUM_NODES", "D"])
   WRITER.writerow(["CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
+  f.close()
   custom_config = configparser.ConfigParser()
   custom_config.read('config.ini')
   ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D = reset_globals(custom_config)
@@ -743,6 +744,8 @@ def main():
   ALPHA = float(custom_config["ALPHA"]["value_start"])
   while(ALPHA<=float(custom_config["ALPHA"]["value_end"])):
       output("**************************************ALPHA", ALPHA)
+      f = open("results.csv", "a")
+      WRITER = csv.writer(f, delimiter=",")
       WRITER.writerow(["************Starting new************"])
       WRITER.writerow([ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
       f.close()
