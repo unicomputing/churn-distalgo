@@ -12,3 +12,4 @@ doc/*.aux
 doc/*.pdf
 MANIFEST
 .dir-locals.el
+results.csv

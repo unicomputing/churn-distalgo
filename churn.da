@@ -4,6 +4,7 @@ import configparser
 import sys
 import statistics
 from tabulate import tabulate
+import csv
 
 #DEFAULT VALUES
 ALPHA=0.1
@@ -11,6 +12,8 @@ BETA = 0.6
 GAMMA = 0.6
 NUM_INIT_NODE = 20
 DELTA = 0.33
+D = None
+
 
 # ---------------------------------------- #
 #                NODE CLASS                #
@@ -64,11 +67,14 @@ class Node (process):
     self.read_pending = False
     # whether a write operation is in progress
     self.write_pending = False
-
+    # code for node entering the system AFTER initial time, in response
+    # to receiving enter-signal message from scheduler
+    self.cpu_start_time = time.process_time()
     # ************************************************************** #
     # ---------- Code for node not part of initial system ---------- #
     # ************************************************************** #
     # entering in response to receiving enter-signal message from scheduler
+
     if known_nodes == set():
         Changes.add(('enter',self))
         bcast('enter', self)
@@ -271,6 +277,7 @@ class Node (process):
   	
 
   def receive(msg= 'done'):
+    send(('cputime', time.process_time()-cpu_start_time), to=scheduler)
     exit()
 
 
@@ -325,6 +332,9 @@ class Scheduler (process):
       self.delay_adjustment = float(self.custom_config["GENERAL"]["delay_adjustment"])
       #### END Variable declarations
       self.join_delay = (max_delay * 4)  + delay_adjustment
+      
+      self.f = open("results.csv", "a")
+      self.WRITER = csv.writer(f, delimiter=",")
       
       for p in nodes: setup(p, [nodes-{p}, self])
       start(nodes)
@@ -653,6 +663,9 @@ class Scheduler (process):
     output("Outputting crashed nodes", crash_nodes)
     writetbl = [["Process ID", "Write Time", "Reason"]]
     readtbl = [["Process ID", "Read Time", "Reason"]]
+    goodreads = []
+    goodwrites = []
+    goodjoins = []
     for i in read_times:
         if i in crash_nodes:
             readtbl.append([i, "-", "Crashed"])
@@ -661,6 +674,7 @@ class Scheduler (process):
             readtbl.append([i, "-", "Left"])
             continue
         readtbl.append([i, statistics.mean(read_times[i]), "-"])
+        goodreads += [x for x in read_times[i]]
     for i in write_times:
         if i in crash_nodes:
             writetbl.append([i, "-", "Crashed"])
@@ -669,28 +683,78 @@ class Scheduler (process):
             writetbl.append([i, "-", "Left"])
             continue
         writetbl.append([i, statistics.mean(write_times[i]), "-"])
+        goodwrites += [x for x in write_times[i]]
+        
+    table = [["Process ID", "Join Time", "Reason"]]
+    for pid in join_times:
+      if pid in joined and join_times[pid] < 8*max_delay+100:
+        table.append([pid, join_times[pid], "-"])
+        goodjoins.append(join_times[pid])
+      else:
+        if pid in crash_nodes:
+            table.append([pid, "-", "CRASHED"])
+        elif pid in left_nodes:
+            table.append([pid, "-", "LEFT"])
+    print(tabulate(table, headers="firstrow", tablefmt="grid"))
     print(tabulate(writetbl, headers="firstrow", tablefmt="grid"))
     print(tabulate(readtbl, headers="firstrow", tablefmt="grid"))
-
+    if await(False): pass
+    elif timeout(10):
+      output("TO / Writing to file")
+      l = list(setof(ct, received(('cputime', ct))))
+    output("Writing to file")
+    output("l is ", l)
+    WRITER.writerow([statistics.mean(l), statistics.mean(goodreads), statistics.mean(goodwrites), statistics.mean(goodjoins)])
 
   def receive(msg = 'done'):
+      -- fds
       output('done received by scheduler')
       output('total nodes in the system',nodes)
       send('done', to= nodes)
+
+
+# ----------------------------------------
+# main
+# ----------------------------------------
+
+def reset_globals(cc):
+    DELTA = cc["DELTA"]["default"]
+    ALPHA = cc["ALPHA"]["default"]
+    BETA = cc["BETA"]["default"]
+    GAMMA = cc["GAMMA"]["default"]
+    NUM_NODES = cc["NODE_COUNT"]["default"]
+    D = cc["D"]["default"]
 
 
 # ---------------------------------------- #
 #                   MAIN                   #
 # ---------------------------------------- #
 def main():
-  START_TIME= time.time()
   config(clock = Lamport)
-  scheduler = new(Scheduler,[])
-  start(scheduler)
-  time.sleep(80)
-  # instead of hard timelimit can we use other parameters to stop the system?
-  send('done', to= scheduler)
-  output('sent done to schedule')
-  output( "total run time of the  system", time.time()-START_TIME)
+  REPS = 1
+  f = open("results.csv", "a")
+  WRITER = csv.writer(f, delimiter=",")
+  WRITER.writerow(["ALPHA", "BETA", "GAMMA", "DELTA", "NUM_NODES", "D"])
+  WRITER.writerow(["CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
+  custom_config = configparser.ConfigParser()
+  custom_config.read('config.ini')
+  reset_globals(custom_config)
+  #global ALPHA, BETA, GAMMA, NUM_INIT_NODE, DELTA, D
+  #####################################################################################
+  ## Test Alpha
+  #####################################################################################
+  ALPHA = float(custom_config["ALPHA"]["value_start"])
+  while(ALPHA<=float(custom_config["ALPHA"]["value_end"])):
+      output("**************************************ALPHA", ALPHA)
+      WRITER.writerow(["************Starting new************"])
+      WRITER.writerow([ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
+      f.close()
+      scheduler = new(Scheduler,[])
+      start(scheduler)
+      time.sleep(40)
+      send('done', to= scheduler)
+      output('sent done to schedule')
+      ALPHA += float(custom_config["ALPHA"]["step_size"])
+  
 
   
