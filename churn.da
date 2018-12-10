@@ -324,8 +324,8 @@ class Scheduler (process):
       #### END Variable declarations
       self.join_delay = (max_delay * 4)  + delay_adjustment
       
-      self.f = open("results.csv", "a")
-      self.WRITER = csv.writer(f, delimiter=",")
+#      self.f = open("results.csv", "a")
+#      self.WRITER = csv.writer(f, delimiter=",")
       
       for p in nodes: setup(p, [nodes-{p}, self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
       start(nodes)
@@ -696,22 +696,19 @@ class Scheduler (process):
       output("TO / Writing to file")
       l = list(setof(ct, received(('cputime', ct))))
     output("Writing to file")
-    a = statistics.mean(l) if l else 0
-    b = statistics.mean(goodreads) if goodreads else 0
-    c = statistics.mean(goodwrites) if goodwrites else 0
-    d = statistics.mean(goodjoins) if goodjoins else 0
-    WRITER.writerow([a, b, c, d])
+    with open("results.csv", "a") as f:
+        a = statistics.mean(l) if l else 0
+        b = statistics.mean(goodreads) if goodreads else 0
+        c = statistics.mean(goodwrites) if goodwrites else 0
+        d = statistics.mean(goodjoins) if goodjoins else 0
+        st = ", ".join(map(str, [ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, a, b, c, d]))
+        f.write(st + "\n")
 
   def receive(msg = 'done'):
       -- fds
       output('done received by scheduler')
       output('total nodes in the system',nodes)
       send('done', to= nodes)
-
-
-# ----------------------------------------
-# main
-# ----------------------------------------
 
 def reset_globals(cc):
     DELTA = cc["DELTA"]["default"]
@@ -729,32 +726,25 @@ def reset_globals(cc):
 def main():
   config(clock = Lamport)
   REPS = 1
-  f = open("results.csv", "a")
-  WRITER = csv.writer(f, delimiter=",")
-  WRITER.writerow(["ALPHA", "BETA", "GAMMA", "DELTA", "NUM_NODES", "D"])
-  WRITER.writerow(["CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
-  f.close()
+  with open("results.csv", "a") as f:
+    st = ", ".join(["ALPHA", "BETA", "GAMMA", "DELTA", "NUM_NODES", "D", "CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
+    f.write(st + "\n")
   custom_config = configparser.ConfigParser()
   custom_config.read('config.ini')
   ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D = reset_globals(custom_config)
   output("D is", D)
   #####################################################################################
-  ## Test Alpha
+  ## Test Different parameters
   #####################################################################################
-  ALPHA = float(custom_config["ALPHA"]["value_start"])
-  while(ALPHA<=float(custom_config["ALPHA"]["value_end"])):
-      output("**************************************ALPHA", ALPHA)
-      f = open("results.csv", "a")
-      WRITER = csv.writer(f, delimiter=",")
-      WRITER.writerow(["************Starting new************"])
-      WRITER.writerow([ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
-      f.close()
-      scheduler = new(Scheduler,[str(ALPHA), BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
+  NUM_NODES = float(custom_config["NODE_COUNT"]["value_start"])
+  while(NUM_NODES<=float(custom_config["NODE_COUNT"]["value_end"])):
+      output("*******************NUM_NODES*******************", NUM_NODES)
+      scheduler = new(Scheduler,[str(ALPHA), BETA, GAMMA, DELTA, NUM_NODES, D])
       start(scheduler)
       time.sleep(40)
       send('done', to= scheduler)
       output('sent done to schedule')
-      ALPHA += float(custom_config["ALPHA"]["step_size"])
+      NUM_NODES += float(custom_config["NODE_COUNT"]["step_size"])
   
 
   
