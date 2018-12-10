@@ -291,8 +291,10 @@ class Scheduler (process):
         output("Process ", pid, " took ", join_times[pid], " seconds to join")
       else:
         output("Process ", pid, "never joined the system")
-    #print(write_times)
-    #print(read_times)
+    if write_times:
+      print(write_times)
+    if read_times:
+      print(read_times)
 
 
   def crash_node(p):
@@ -302,8 +304,8 @@ class Scheduler (process):
     # Just a bunch random tests. Here we go completely crazy and 
     # make things crazy
     rounds= int(custom_config['GENERAL']['num_of_rounds'])
-    while(rounds>0):
-        output('ROUND NUMBER',rounds)
+    for i in range(rounds):
+        output('ROUND NUMBER:',i)
         p = random.choice(list(joined-crash_nodes))
         output('randomly chosen node is', p)
 
@@ -345,18 +347,19 @@ class Scheduler (process):
             output("Skipping one round...")
             rounds-=1
             break
-        rounds-=1 
         
     # Introduce a small delay between two sends
     if await(False):pass
     elif timeout(30): output("Waited for 10 seconds")
     check_condition_3_validity()
    
-  def test_condition_1_validity():
-    output("Testing if all present nodes joined within 4*D")
-    for p in joined:
-      if join_times[p] > join_delay:
-        output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(p, join_times[p], join_delay))
+  def test_condition_1_invariant():
+    error_found = False
+    output("Testing join times of nodes")
+    for pid in join_times:
+      if pid in joined and join_times[pid] > join_delay:
+        output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(pid, join_times[pid], join_delay))
+        error_found = True
     entered_not_join = list(set(entered) - set(joined))
     for pid in entered_not_join:
       if pid in crash_nodes:
@@ -365,10 +368,45 @@ class Scheduler (process):
          output("\nProcess {} left before joining".format(pid))
       else:
         output("\n###ERROR process never joined!!!")
+        error_found = True
+    if not error_found:
+      output("Join time is within permissible range for all nodes")
         
     
   def anyof(s):
         return next(iter(s)) if s else None
+
+
+  def check_condition_1():
+    # Test cases  for checking join eventually takes place for a node that never crashed or left 
+    rounds= int(custom_config['GENERAL']['num_of_rounds'])
+    for i in range(rounds):
+        output('ROUND NUMBER:',i)
+        r=random.randint(1,4) 
+        if r==1:          
+          p = test_enter()
+          output('Making a node leave before joining', p)
+          # allow the enter message to be received
+          time.sleep(max_delay)
+          test_leave(p)
+
+        elif r==2:        
+          p = test_enter()
+          output('Making a node crash before joining', p)
+          # allow the enter message to be received
+          time.sleep(max_delay)
+          crash_node(p)
+
+        elif r==3:
+          p = test_enter()
+          output('Making a node go down before joining', p)        
+          # allow the enter message to be received
+          time.sleep(max_delay)
+          output('Sending sleep to ',p)
+          send('sleep',to=p)
+        else:
+          output('Nothing to do in this round') 
+
 
   def check_condition_3_validity():
     # The read and write operations are atomic:
@@ -423,10 +461,13 @@ class Scheduler (process):
     
   def run():
     
-    test_general_correctness()
+    # test_general_correctness()
+    # test_condition_3()    
+    check_condition_1()
     output('Exited the loop')
     await(received('done'))
-    test_condition_2()
+    test_condition_1_invariant()
+    check_condition_2()
     print_stats()
     output('scheduler terminating')
     
@@ -467,10 +508,12 @@ class Scheduler (process):
       p = new(Node, [set(), self])
       start(p)
       nodes.add(p)
+      return p
       
   def receive(msg='joined', from_=p):
       join_times[p] = time.time() - join_times[p]
       output('join operation completed for ', p)
+      joined.add(p)
 
   def test_read(p):
       send('read', to= p)
@@ -518,9 +561,9 @@ class Scheduler (process):
     readwriteorder.append([num, wid, 'readend', pid, val])
 
 
-  def test_condition_2():    # read and write for a non-failed, non-crashed node should be completed within 2D
+  def check_condition_2():    # read and write for a non-failed, non-crashed node should be completed within 2D
     D=6
-    output("Outputting craashed niodes", crash_nodes)
+    output("Outputting crashed nodes", crash_nodes)
     output("printing read write times")
     for i in read_times:
         print("Process is", i)
@@ -545,7 +588,8 @@ class Scheduler (process):
                 condition2[i].append((j)/D)
             else:
                 condition2[i]=[(j)/D]
-    print(condition2)
+    if condition2:
+      print(condition2)
   
 
 
