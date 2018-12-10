@@ -589,7 +589,7 @@ class Scheduler (process):
         output("NEW NODE CANNOT ENTER THE SYSTEM")
         return None
       enterleaveorder.append([time.time(), len(nodes)])
-      p = new(Node, [set(), self])
+      p = new(Node, [set(), self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
       start(p)
       nodes.add(p)
       return p
