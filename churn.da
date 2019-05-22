@@ -97,6 +97,7 @@ class Node (process):
   def Present():
       # set of nodes that p believes are currently present (entered but not left)
       return setof(q, ('enter',q) in Changes, ('leave',q) not in Changes)
+      # return setof(q, (_,q) in Changes, ('leave',q) not in Changes)
 
 
   def receive(msg = ('enter',p)):
@@ -128,6 +129,7 @@ class Node (process):
 
   def receive(msg = ('joined', p)):
       # received joined message from process id and broadcast the msg forward
+      # Changes  = c
       Changes.add(('join',p))
       Changes.add(('enter',p))
       bcast('joined-echo',p)
@@ -135,6 +137,8 @@ class Node (process):
 
   def receive(msg = ('joined-echo',p)):
       # recieved joined echo about from process id
+      # Changes = c
+
       Changes.add(('join',p))
       Changes.add(('enter',p))
 
@@ -150,6 +154,9 @@ class Node (process):
   def receive(msg = ('leave',p)):
       # received leave about process with id
       Changes.add(('leave',p))
+      # output('size of Changes: {0}'.format(len(Changes)))
+      Changes = Changes - {('enter',p), ('join',p)}
+      # output('size of Changes: {0}'.format(len(Changes)))
       bcast('leave-echo',p)
 
 
@@ -277,6 +284,7 @@ class Node (process):
   # ---------------------------- RUN ---------------------------- #
   # ************************************************************* #
   def run():
+    # output('size of Changes: {0}'.format(len(self.Changes)))
     await(False) # Wait till the condition is true
     output('node', self, 'at end of run')
 
@@ -564,6 +572,8 @@ class Scheduler (process):
       curtime = time.time()
       prevtime = curtime - max_delay
       nt = get_count_before(prevtime)
+      # output("ALPHA: {0}".format(ALPHA))
+      # output("number of nodes: {0}".format(nt))
       if nt*float(ALPHA) < (get_event_count_in(prevtime, curtime)+1):
         return False
       else:
