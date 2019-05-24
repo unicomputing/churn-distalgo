@@ -97,7 +97,6 @@ class Node (process):
   def Present():
       # set of nodes that p believes are currently present (entered but not left)
       return setof(q, ('enter',q) in Changes, ('leave',q) not in Changes)
-      # return setof(q, (_,q) in Changes, ('leave',q) not in Changes)
 
 
   def receive(msg = ('enter',p)):
@@ -121,6 +120,8 @@ class Node (process):
               is_joined = True
               output('joined')
               Changes.add(('join',self))
+              # output('size of Changes: {0}'.format(len(Changes)))
+              Changes = setof((state,q), (state,q) in Changes, ('leave',q) not in Changes or state == 'leave')
               # tell scheduler I've joined
               delayed_send(('joined'), scheduler)
               output('sent joined to scheduler')
@@ -138,7 +139,6 @@ class Node (process):
   def receive(msg = ('joined-echo',p)):
       # recieved joined echo about from process id
       # Changes = c
-
       Changes.add(('join',p))
       Changes.add(('enter',p))
 
@@ -154,14 +154,13 @@ class Node (process):
   def receive(msg = ('leave',p)):
       # received leave about process with id
       Changes.add(('leave',p))
-      # output('size of Changes: {0}'.format(len(Changes)))
       Changes = Changes - {('enter',p), ('join',p)}
-      # output('size of Changes: {0}'.format(len(Changes)))
       bcast('leave-echo',p)
 
 
   def receive(msg = ('leave-echo',p)):
       # output received leave-echo about process id
+      Changes = Changes - {('enter',p), ('join',p)}
       Changes.add(('leave',p))
 
 
@@ -356,6 +355,7 @@ class Scheduler (process):
   def crash_node(p):
     if crash_allowed():
       crash_nodes.add(p)
+      output('NODE crashed')
     else:
       output('NODE NOT ALLOWED TO FAIL')
       return None
