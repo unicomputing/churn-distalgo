@@ -6,755 +6,777 @@ import statistics
 from tabulate import tabulate
 import csv
 
-
+"""
+Comments Dictionary
+@@@ - new lines added
+	  if before a function then whole function is new
+$$$ - exact copy from algorithm
+"""
 # ---------------------------------------- #
 #                NODE CLASS                #
 # ---------------------------------------- #
 class Node (process):
-  def setup(known_nodes, scheduler, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D):
-    self.custom_config = configparser.ConfigParser()
-    self.custom_config.read('config.ini')
+	def setup(known_nodes, scheduler, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D):
+		self.custom_config = configparser.ConfigParser()
+		self.custom_config.read('config.ini')
 
-    # ************************************************** #
-    # ---------- Variables for managing churn ---------- #
-    # ************************************************** #
-    # for initial node, known_nodes is all the other initial nodes; otherwise it is empty set
-    # whether node has joined the system
-    self.is_joined = bool(known_nodes)
-    # number of enter-echo msgs to receive before joining
-    self.join_bound = 0
-    # number of enter-echo messages received
-    self.join_counter = 0
-    # Initially assume every known node has entered and joined
-    # set of ENTER, LEAVE, and JOINED events known to node
-    self.Changes = (setof(('enter',q), q in known_nodes) | setof(('join',q), q in known_nodes))
-    # add to changes if self is one of the initial nodes
-    if (known_nodes):
-        Changes.add(('enter',self))
-        Changes.add(('join',self))
+		# ************************************************** #
+		# ---------- Variables for managing churn ---------- #
+		# ************************************************** #
+		# for initial node, known_nodes is all the other initial nodes; otherwise it is empty set
+		# whether node has joined the system
+		self.is_joined = bool(known_nodes)  # $$$
+		# number of enter-echo msgs to receive before joining
+		self.join_bound = 0  # $$$
+		# number of enter-echo messages received
+		self.join_counter = 0  # $$$
+		# Initially assume every known node has entered and joined
+		# set of ENTER, LEAVE, and JOINED events known to node
+		self.Changes = (setof(('enter',q), q in known_nodes) | setof(('join',q), q in known_nodes))  # $$$
+		# add to changes if self is one of the initial nodes
+		if (known_nodes):  # $$$
+			Changes.add(('enter',self))  # $$$
+			Changes.add(('join',self))  # $$$
 
-    # ***************************************************************************************** #
-    # ---------- Variables for managing churn and reading/writing simulated register ---------- #
-    # ***************************************************************************************** #
-    self.val = None # latest register value known to node
-    self.num = 0 # sequence number of latest value known to node
-    self.w_id = None  # id of node that wrote latest value known to node
+		# ***************************************************************************************** #
+		# ---------- Variables for managing churn and reading/writing simulated register ---------- #
+		# ***************************************************************************************** #
+		# latest register value known to node
+		self.val = None  # $$$
+		# sequence number of latest value known to node
+		self.num = 0  # $$$
+		# id of node that wrote latest value known to node
+		self.w_id = None  # $$$
 
-    # ********************************************************************** #
-    # ---------- Variables for reading/writing simulated register ---------- #
-    # ********************************************************************** #
-    # temporary storage for value being read or written
-    self.temp = 0
-    # uniquely identify read and write phases of an operation to ensure total ordering
-    self.tag = 0
-    # number of replies/acks needed to finish a phase
-    self.rw_bound = 0
-    # number of replies/acks received for a phase
-    self.rw_counter = 0
-    # whether a read phase is in progress
-    self.rp_pending = False
-    # whether a write phase is in progress
-    self.wp_pending = False
-    #  whether a read operation is in progress
-    self.read_pending = False
-    # whether a write operation is in progress
-    self.write_pending = False
-    # code for node entering the system AFTER initial time, in response
-    # to receiving enter-signal message from scheduler
-    self.cpu_start_time = time.process_time()
-    # ************************************************************** #
-    # ---------- Code for node not part of initial system ---------- #
-    # ************************************************************** #
-    # entering in response to receiving enter-signal message from scheduler
+		# ********************************************************************** #
+		# ---------- Variables for reading/writing simulated register ---------- #
+		# ********************************************************************** #
+		# temporary storage for value being read or written
+		self.temp = 0  # $$$
+		# uniquely identify read and write phases of an operation to ensure total ordering
+		self.tag = 0  # $$$
+		# number of replies/acks needed to finish a phase
+		self.rw_bound = 0  # $$$
+		# number of replies/acks received for a phase
+		self.rw_counter = 0  # $$$
+		# whether a read phase is in progress
+		self.rp_pending = False  # $$$
+		# whether a write phase is in progress
+		self.wp_pending = False  # $$$
+		#  whether a read operation is in progress
+		self.read_pending = False  # $$$
+		# whether a write operation is in progress
+		self.write_pending = False  # $$$
+		# code for node entering the system AFTER initial time, in response
+		# to receiving enter-signal message from scheduler
+		self.cpu_start_time = time.process_time()  # @@@
+		# ************************************************************** #
+		# ---------- Code for node not part of initial system ---------- #
+		# ************************************************************** #
+		# entering in response to receiving enter-signal message from scheduler
 
-    if known_nodes == set():
-        Changes.add(('enter',self))
-        bcast('enter', self)
-        output('entered, bcasted enter msgs')
+		if known_nodes == set():  # $$$
+			Changes.add(('enter',self))  # $$$
+			bcast('enter', self)  # $$$
+			output('entered, bcasted enter msgs')  # $$$
 
-  # -------------------- End of Node setup method -------------------- #
-  # Broadcast is peformed by scheduler which has perfect global knowledge of nodes preset in system
+		# -------------------- End of Node setup method -------------------- #
+		# Broadcast is peformed by scheduler which has perfect global knowledge of nodes preset in system
 
-
-  def delayed_send(m, rec):
-    # Simulating real network by introducing random delay for each message transmission
-    # Reference: arXiv:1708.03274 [cs.DC] Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
-    # "Simulating a Shared Register in a System that Never Stops Changing", August 26, 2018.page 2, para 4 line 3
-    delay = random.randint(0, float(D)*100)/100
-    if await(False):pass
-    elif timeout(delay): pass
-    send(m, to=rec)
-
-
-  def bcast(*m):
-      # adding random delay for all broadcast messages
-      delayed_send(('bcast',m), scheduler)
+	# @@@
+	def delayed_send(m, rec):
+		# Simulating real network by introducing random delay for each message transmission
+		# Reference: arXiv:1708.03274 [cs.DC] Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
+		# "Simulating a Shared Register in a System that Never Stops Changing", August 26, 2018.page 2, para 4 line 3
+		delay = random.randint(0, float(D)*100)/100
+		if await(False):pass
+		elif timeout(delay): pass
+		send(m, to=rec)
 
 
-  # ******************************************************************* #
-  # ----------------- Methods for managing the churn ------------------ #
-  # ******************************************************************* #
-  def Present():
-      # set of nodes that p believes are currently present (entered but not left)
-      return setof(q, ('enter',q) in Changes, ('leave',q) not in Changes)
+	def bcast(*m):
+		# adding random delay for all broadcast messages
+		delayed_send(('bcast',m), scheduler)  # @@@
 
 
-  def receive(msg = ('enter',p)):
-      # receive message from entering nodes, add to local changes and broadcast to other nodes
-      Changes.add(('enter',p))
-      bcast('enter-echo', Changes, (val, num, w_id), is_joined, p)
+	# ******************************************************************* #
+	# ----------------- Methods for managing the churn ------------------ #
+	# ******************************************************************* #
+	# $$$
+	def Present():
+		# set of nodes that p believes are currently present (entered but not left)
+		return setof(q, ('enter',q) in Changes, ('leave',q) not in Changes)
+
+	# $$$
+	def receive(msg = ('enter',p)):
+		# receive message from entering nodes, add to local changes and broadcast to other nodes
+		Changes.add(('enter',p))
+		bcast('enter-echo', Changes, (val, num, w_id), is_joined, p)
 
 
-  def receive(msg = ('enter-echo', C, (v, s, i), j, p)):
-      # checking sequence number and id for process entering with given process id
-      Changes = Changes | C
-      if (not is_joined) and (p == self):
-          if (j == True) and (join_bound == 0):
-              #since we are counting join_bound on basis of info from an already joined node
-              join_bound = float(GAMMA) * len(Present())
-              output('join_bound set to', join_bound, 'based on Present size of', len(Present()))
-          join_counter += 1
-          if (join_counter >= join_bound) and (join_bound > 0):
-          	  #we do need join_bound >0 condition because the first few enter-echo messages can be from process not joined in
-          	  #the system and in this case the join_counter will exceed join_bound which was never set
-              is_joined = True
-              output('joined')
-              Changes.add(('join',self))
-              # output('size of Changes: {0}'.format(len(Changes)))
-              Changes = setof((state,q), (state,q) in Changes, ('leave',q) not in Changes or state == 'leave')
-              # tell scheduler I've joined
-              delayed_send(('joined'), scheduler)
-              output('sent joined to scheduler')
-              bcast('joined',self)
+	def receive(msg = ('enter-echo', C, (v, s, i), j, p)):
+		# checking sequence number and id for process entering with given process id
+		# if (s, i) > (num, w_id, id):  # @@@
+		# 	val, num, w_id = v, s, i  # @@@
+		Changes = Changes | C  # $$$
+		if (not is_joined) and (p == self):  # $$$
+			if (j == True) and (join_bound == 0):  # $$$
+				#since we are counting join_bound on basis of info from an already joined node
+				join_bound = float(GAMMA) * len(Present())  # $$$
+				output('join_bound set to', join_bound, 'based on Present size of', len(Present()))  # $$$
+			join_counter += 1  # $$$
+			if (join_counter >= join_bound) and (join_bound > 0):  # $$$
+				#we do need join_bound >0 condition because the first few enter-echo messages can be from process not joined in
+				#the system and in this case the join_counter will exceed join_bound which was never set
+				is_joined = True  # $$$
+				output('joined')  # $$$
+				Changes.add(('join',self))  # $$$
+				# output('size of Changes: {0}'.format(len(Changes)))
+				Changes = setof((state,q), (state,q) in Changes, ('leave',q) not in Changes or state == 'leave')  # @@@
+				# tell scheduler I've joined
+				delayed_send(('joined'), scheduler)  # @@@
+				output('sent joined to scheduler')  # $$$
+				bcast('joined',self)  # $$$
 
 
-  def receive(msg = ('joined', p)):
-      # received joined message from process id and broadcast the msg forward
-      # Changes  = c
-      Changes.add(('join',p))
-      Changes.add(('enter',p))
-      bcast('joined-echo',p)
+	# $$$
+	def receive(msg = ('joined', p)):
+		# received joined message from process id and broadcast the msg forward
+		# Changes  = c
+		Changes.add(('join',p))
+		Changes.add(('enter',p))
+		bcast('joined-echo',p)
 
 
-  def receive(msg = ('joined-echo',p)):
-      # recieved joined echo about from process id
-      # Changes = c
-      Changes.add(('join',p))
-      Changes.add(('enter',p))
+	# $$$
+	def receive(msg = ('joined-echo',p)):
+		# recieved joined echo about from process id
+		# Changes = c
+		Changes.add(('join',p))
+		Changes.add(('enter',p))
 
 
-  def receive(msg = ('leave-signal')):
-      # node leaves in response to 'leave-signal' msg from scheduler
-      output('received leave signal, exiting')
-      bcast('leave', self)
-      output('exiting')
-      exit()
+	# $$$
+	def receive(msg = ('leave-signal')):
+		# node leaves in response to 'leave-signal' msg from scheduler
+		output('received leave signal')
+		bcast('leave', self)
+		output('exiting...')
+		exit()
 
 
-  def receive(msg = ('leave',p)):
-      # received leave about process with id
-      Changes.add(('leave',p))
-      Changes = Changes - {('enter',p), ('join',p)}
-      bcast('leave-echo',p)
+	def receive(msg = ('leave',p)):
+		# received leave about process with id
+		Changes.add(('leave',p))  # $$$
+		Changes = Changes - {('enter',p), ('join',p)}  # @@@
+		bcast('leave-echo',p)  # $$$
 
 
-  def receive(msg = ('leave-echo',p)):
-      # output received leave-echo about process id
-      Changes = Changes - {('enter',p), ('join',p)}
-      Changes.add(('leave',p))
+	def receive(msg = ('leave-echo',p)):
+		# output received leave-echo about process id
+		Changes = Changes - {('enter',p), ('join',p)}  # @@@
+		Changes.add(('leave',p))  # $$$
 
 
-  # ************************************************************* #
-  # ---------- Methods for simulating reads and writes ---------- #
-  # ************************************************************* #
-  def Members():
-    # set of nodes that p believes are currently members (joined but not left)
-    return setof(q, ('join',q) in Changes, ('leave',q) not in Changes)
+	# ************************************************************* #
+	# ---------- Methods for simulating reads and writes ---------- #
+	# ************************************************************* #
+	# $$$
+	def Members():
+		# set of nodes that p believes are currently members (joined but not left)
+		return setof(q, ('join',q) in Changes, ('leave',q) not in Changes)
 
 
-  def receive(msg='read'):
-      # Receive request to read register from other processes
-      output('read invoked')
-      # Needed to measure the timestamp of the read request
-      send(('readstarttime', num, w_id), to=scheduler)
-      read_pending = True
-      begin_read_phase()
+	def receive(msg='read'):
+		# Receive request to read register from other processes
+		output('read invoked')  # $$$
+		# Needed to measure the timestamp of the read request
+		send(('readstarttime', num, w_id), to=scheduler)  # @@@
+		read_pending = True  # $$$
+		begin_read_phase()  # $$$
 
 
-  def receive(msg = ('write', v)):
-      # Receive request to write to register from other processes
-      output('write invoked, value:', v)
-      write_pending = True
-      temp = v
-      begin_read_phase()
+	# $$$
+	def receive(msg = ('write', v)):
+		# Receive request to write to register from other processes
+		output('write invoked, value:', v)
+		write_pending = True
+		temp = v
+		begin_read_phase()
 
 
-  def begin_read_phase():
-      output('begin read phase')
-      tag += 1
-      bcast('query', tag, self)
-      rw_bound = float(BETA) * len(Members())
-      output('rw_bound set to', rw_bound, 'based on Members size of', len(Members()))
-      # in case of multiple reads this helps in differentiating reads and associated counter
-      rw_counter = 0
-      rp_pending = True
+	# $$$
+	def begin_read_phase():
+		output('begin read phase')
+		tag += 1
+		bcast('query', tag, self)
+		rw_bound = float(BETA) * len(Members())
+		output('rw_bound set to', rw_bound, 'based on Members size of', len(Members()))
+		# in case of multiple reads this helps in differentiating reads and associated counter
+		rw_counter = 0
+		rp_pending = True
+
+	# $$$
+	def receive(msg = ('reply', (v, s, i), rt, p)):
+		# receive a reply msg for query nodes
+		if rp_pending and (rt == tag) and (p == self):
+			if (s, i) > (num, w_id):
+				val, num, w_id = v, s, i
+			rw_counter += 1
+			if (rw_counter >= rw_bound):
+				rp_pending = False
+				begin_write_phase()
 
 
-  def receive(msg = ('reply', (v, s, i), rt, p)):
-      # receive a reply msg for query nodes
-      if rp_pending and (rt == tag) and (p == self):
-          if (s, i) > (num, w_id):
-              val, num, w_id = v, s, i
-          rw_counter += 1
-          if (rw_counter >= rw_bound):
-              rp_pending = False
-              begin_write_phase()
+	def begin_write_phase():
+		output('begin write phase')  # $$$
+		if write_pending:  # $$$
+			val = temp  # $$$
+			num += 1  # $$$
+			w_id = self  # $$$
+		if read_pending:  # $$$
+			temp = val  # $$$
+		bcast('update', (temp, num, w_id), tag, self)  # $$$
+		if write_pending:  # @@@
+			# Required to calculate the total ordering
+			send(('writeupdatetime', num, w_id, temp), to=scheduler)  # @@@
+		else:  # @@@
+			send(('readendtime', num, w_id, temp), to=scheduler)  # @@@
+		output('updated values are being sent as value,sequence,w_id',temp,num,w_id)  # $$$
+		rw_counter = 0  # $$$
+		wp_pending = True  # $$$
 
 
-  def begin_write_phase():
-      output('begin write phase')
-      if write_pending:
-          val = temp
-          num += 1
-          w_id = self
-      if read_pending:
-          temp = val
-      bcast('update', (temp, num, w_id), tag, self)
-      if write_pending:
-        # Required to calculate the total ordering
-        send(('writeupdatetime', num, w_id, temp), to=scheduler)
-      else:
-        send(('readendtime', num, w_id, temp), to=scheduler)
-      output('updated values are being sent as value,sequence,w_id',temp,num,w_id)
-      rw_counter = 0
-      wp_pending = True
+	# $$$
+	def receive(msg = ('ack',wt,p)):
+		if wp_pending and (wt == tag) and (p == self):
+			rw_counter += 1
+			if (rw_counter >= rw_bound):
+				wp_pending = False
+				if (read_pending):
+					read_pending = False
+					#make scheduler note the time here
+					delayed_send(('return',temp), scheduler)
+				if (write_pending):
+					write_pending = False
+					#make scheduler note the time here
+					delayed_send('ack', scheduler)
+
+	# ************************************************************* #
+	# --------------------- SERVER code follows ------------------- #
+	# ************************************************************* #
+	def receive(msg= ('update', (v, s, i), wt, q)):
+		# Handle an update message
+		if w_id == None or (s, i) > (num, w_id):  # @@@
+			val, num, w_id = v, s, i  # $$$
+		if is_joined:  # $$$
+			bcast('ack', wt, q)  # $$$
+		bcast('update-echo', (val, num, w_id))  # $$$
 
 
-  def receive(msg = ('ack',wt,p)):
-      if wp_pending and (wt == tag) and (p == self):
-          rw_counter += 1
-          if (rw_counter >= rw_bound):
-              wp_pending = False
-              if (read_pending):
-                  read_pending = False
-                  #make scheduler note the time here
-                  delayed_send(('return',temp), scheduler)
-              if (write_pending):
-                  write_pending = False
-                  #make scheduler note the time here
-                  delayed_send('ack', scheduler)
-
-  # ************************************************************* #
-  # --------------------- SERVER code follows ------------------- #
-  # ************************************************************* #
-  def receive(msg= ('update', (v, s, i), wt, q)):
-    # Handle an update message
-    if w_id == None or (s, i) > (num, w_id):
-       val, num, w_id = v, s, i
-    if is_joined:
-       bcast('ack', wt, q)
-    bcast('update-echo', (val, num, w_id))
+	# $$$
+	def receive(msg = ('query', rt, p)):
+		# Handle an update message
+		if is_joined:
+			bcast('reply', (val, num, w_id), rt, p)
+			#output('sent a reply message for query message with val ,num and w id as ',val, num, w_id)
 
 
-  def receive(msg = ('query', rt, p)):
-    # Handle an update message
-    if is_joined:
-      bcast('reply', (val, num, w_id), rt, p)
-      #output('sent a reply message for query message with val ,num and w id as ',val, num, w_id)
+	# $$$
+	def receive(msg = ('update-echo', (v, s, i))):
+		# Handle an update echo message
+		if (s, i) > (num, w_id):
+			val, num, w_id = v, s, i
 
 
-  def receive(msg = ('update-echo', (v, s, i))):
-    # Handle an update echo message
-    if (s, i) > (num, w_id):
-        val, num, w_id = v, s, i
+	# @@@
+	def receive(msg ='sleep'):
+		output('sleeping for 1 second')
+		time.sleep(int(custom_config['PERFORMANCE']['sleep_time_node']))
 
 
-  def receive(msg ='sleep'):
-    output('sleeping for 1 second')
-    time.sleep(int(custom_config['PERFORMANCE']['sleep_time_node']))
-  	
-
-  def receive(msg= 'done'):
-    send(('cputime', time.process_time()-cpu_start_time), to=scheduler)
-    exit()
+	# @@@
+	def receive(msg= 'done'):
+		send(('cputime', time.process_time()-cpu_start_time), to=scheduler)
+		exit()
 
 
-  # ************************************************************* #
-  # ---------------------------- RUN ---------------------------- #
-  # ************************************************************* #
-  def run():
-    # output('size of Changes: {0}'.format(len(self.Changes)))
-    await(False) # Wait till the condition is true
-    output('node', self, 'at end of run')
+	# ************************************************************* #
+	# ---------------------------- RUN ---------------------------- #
+	# ************************************************************* #
+	def run():
+		# output('size of Changes: {0}'.format(len(self.Changes)))
+		await(False) # Wait till the condition is true
+		output('node', self, 'at end of run')
 
 
 # ---------------------------------------- #
 #             SCHEDULER CLASS              #
 # ---------------------------------------- #
 class Scheduler (process):
-  def setup(ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D):
-      self.custom_config = configparser.ConfigParser()
-      self.custom_config.read('config.ini') 
-      self.nodes = new(Node, num=int(NUM_INIT_NODE))
-      #### Variable declarations
-      self.allnodes = nodes
-      self.joined = nodes
-      self.entered = nodes
-      # A map with process_id -> time_taken_from_enter_to_join
-      self.join_times = {}
-      # A map with process_id -> [time_taken_to_write]
-      self.write_times = {} 
-      # A map with process_id -> [time_taken_to_read]
-      self.read_times={}
-      # to keep a track of crashed nodes. Crash nodes are the failed nodes that scheduler doesn't know about. 
-      self.crash_nodes=set()
-      # to keep a track of left nodes 
-      self.left_nodes=set()
-      # A process is considered in-use of a request has been issued to it
-      # for either a read or a write
-      self.in_use = set()
-      # read write timestamps to check the order
-      self.readwriteorder = []
-      # enter leave times to check intervals of time
-      self.enterleaveorder = []
-      # crash nodes order to check intervals of time
-      self.crashorder = []
-      # max allowed delay for one message
+	def setup(ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D):
+		self.custom_config = configparser.ConfigParser()
+		self.custom_config.read('config.ini') 
+		self.nodes = new(Node, num=int(NUM_INIT_NODE))
+		#### Variable declarations
+		self.allnodes = nodes
+		self.joined = nodes
+		self.entered = nodes
+		# A map with process_id -> time_taken_from_enter_to_join
+		self.join_times = {}
+		# A map with process_id -> [time_taken_to_write]
+		self.write_times = {} 
+		# A map with process_id -> [time_taken_to_read]
+		self.read_times={}
+		# to keep a track of crashed nodes. Crash nodes are the failed nodes that scheduler doesn't know about. 
+		self.crash_nodes=set()
+		# to keep a track of left nodes 
+		self.left_nodes=set()
+		# A process is considered in-use of a request has been issued to it
+		# for either a read or a write
+		self.in_use = set()
+		# read write timestamps to check the order
+		self.readwriteorder = []
+		# enter leave times to check intervals of time
+		self.enterleaveorder = []
+		# crash nodes order to check intervals of time
+		self.crashorder = []
+		# max allowed delay for one message
 
-      #### END Variable declarations
-      self.condition2={}
-      ## to check if each read and write are completed in 2D
+		#### END Variable declarations
+		self.condition2={}
+		## to check if each read and write are completed in 2D
 
-      self.max_delay = float(D)
-      # delay adjustment to account for cpu time
-      self.delay_adjustment = float(self.custom_config["GENERAL"]["delay_adjustment"])
-      #### END Variable declarations
-      self.join_delay = (max_delay * 4)  + delay_adjustment
-      
-#      self.f = open("results.csv", "a")
-#      self.WRITER = csv.writer(f, delimiter=",")
-      
-      for p in nodes: setup(p, [nodes-{p}, self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
-      start(nodes)
-      output('nodes present initially are', nodes)
+		self.max_delay = float(D)
+		# delay adjustment to account for cpu time
+		self.delay_adjustment = float(self.custom_config["GENERAL"]["delay_adjustment"])
+		#### END Variable declarations
+		self.join_delay = (max_delay * 4)  + delay_adjustment
 
+		#      self.f = open("results.csv", "a")
+		#      self.WRITER = csv.writer(f, delimiter=",")
 
-  def print_stats():
-    table = [["Process ID", "Join Time", "Reason"]]
-    for pid in join_times:
-      if pid in joined and join_times[pid] < 8*max_delay+100:
-        table.append([pid, join_times[pid], "-"])
-      else:
-        if pid in crash_nodes:
-            table.append([pid, "-", "CRASHED"])
-        elif pid in left_nodes:
-            table.append([pid, "-", "LEFT"])
-    print(tabulate(table, headers="firstrow", tablefmt="grid"))
+		for p in nodes: setup(p, [nodes-{p}, self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
+		start(nodes)
+		output('nodes present initially are', nodes)
 
 
-  def crash_node(p):
-    if crash_allowed():
-      crash_nodes.add(p)
-      output('NODE crashed')
-    else:
-      output('NODE NOT ALLOWED TO FAIL')
-      return None
+	def print_stats():
+		table = [["Process ID", "Join Time", "Reason"]]
+		for pid in join_times:
+			if pid in joined and join_times[pid] < 8*max_delay+100:
+				table.append([pid, join_times[pid], "-"])
+			else:
+				if pid in crash_nodes:
+					table.append([pid, "-", "CRASHED"])
+				elif pid in left_nodes:
+					table.append([pid, "-", "LEFT"])
+		print(tabulate(table, headers="firstrow", tablefmt="grid"))
 
 
-  def churn_random_nodes(count):
-    for _ in range(count):
-        test_enter()
-        if random.choice(["enter", "leave"]) == "enter":
-            test_enter()
-        else:
-            p = random.choice(list(joined-left_nodes-crash_nodes))
-            output('randomly chosen node is', p)
-            test_leave(p)
+	def crash_node(p):
+		if crash_allowed():
+			crash_nodes.add(p)
+			output('NODE crashed')
+		else:
+			output('NODE NOT ALLOWED TO FAIL')
+			return None
 
 
-  def test_consistency():
-    # Just a bunch random tests. Here we go completely crazy and 
-    # make things crazy
-    check_condition_1()
-    rounds= int(custom_config['GENERAL']['num_of_rounds'])
-    for i in range(rounds):
-        output('ROUND NUMBER:',i)
-        churn_random_nodes(int(custom_config['GENERAL']['churn_count']))
-        p= random.choice(list(nodes-left_nodes-crash_nodes))
-
-        r=random.randint(1,10)              #crash with a random probability
-        if (r>1):
-      	    crash_node(p)
-      	    output('Randomly chosen node to crash ',p)
-
-        r=random.randint(1,10)
-        if (r>0):                           #simulating network delay for a random node
-          p=random.choice(list(nodes-left_nodes-crash_nodes))
-          output('Sending sleep to ',p)
-          send('sleep',to=p)     
-        # Bits to identify whether we randomly do a read of a write 
-        # If we have a True as the o/p of random choice then we do a read
-        READ = True
-        WRITE = False
-        for x in range(int(custom_config["GENERAL"]["num_read_writes"])):
-          read_or_write = random.choice([True, False])
-          allowed_nodes = list(nodes-left_nodes-crash_nodes-in_use)
-          if allowed_nodes:
-            p = random.choice(allowed_nodes)
-            output('randomly chosen node is: ', p)
-            in_use.add(p)
-            if read_or_write == READ:
-              test_read(p)
-              output("Issuing a read command")
-            else:
-              val = random.randint(1,100)
-              output("Issuing a write command with value: ", val)
-              test_write(p, val)
-          else:
-            output("No nodes present to perform read or write operation")      
-            output("Skipping one round...")
-            rounds-=1
-            break
+	def churn_random_nodes(count):
+		for _ in range(count):
+			test_enter()
+			if random.choice(["enter", "leave"]) == "enter":
+				test_enter()
+			else:
+				p = random.choice(list(joined-left_nodes-crash_nodes))
+				output('randomly chosen node is', p)
+				test_leave(p)
 
 
-  def test_condition_1_invariant():
-    # Reference: arXiv:1708.03274 [cs.DC] Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
-    # "Emulating a Shared Register in a System that Never Stops Changing", August, 2015.page 3, para 6, point 1
-    error_found = False
-    output("Testing join times of nodes")
-    for pid in join_times:
-      if pid in joined and join_times[pid] > join_delay:
-        output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(pid, join_times[pid], join_delay))
-        error_found = True
-    entered_not_join = list(set(entered) - set(joined))
-    for pid in entered_not_join:
-      if pid in crash_nodes:
-        output("\nProcess {} crashed before joining".format(pid))
-      elif pid in left_nodes:
-         output("\nProcess {} left before joining".format(pid))
-      else:
-        output("\n###ERROR process never joined!!!")
-        error_found = True
-    if not error_found:
-      output("Join time is within permissible range for all nodes")
-        
-    
-  def anyof(s):
-        return next(iter(s)) if s else None
+	def test_consistency():
+		# Just a bunch random tests. Here we go completely crazy and 
+		# make things crazy
+		check_condition_1()
+		rounds= int(custom_config['GENERAL']['num_of_rounds'])
+		for i in range(rounds):
+			output('ROUND NUMBER:',i)
+			churn_random_nodes(int(custom_config['GENERAL']['churn_count']))
+			p= random.choice(list(nodes-left_nodes-crash_nodes))
+
+			r=random.randint(1,10)              #crash with a random probability
+			if (r>1):
+				crash_node(p)
+				output('Randomly chosen node to crash ',p)
+
+			r=random.randint(1,10)
+			if (r>0):                           #simulating network delay for a random node
+				p=random.choice(list(nodes-left_nodes-crash_nodes))
+				output('Sending sleep to ',p)
+				send('sleep',to=p)     
+			# Bits to identify whether we randomly do a read of a write 
+			# If we have a True as the o/p of random choice then we do a read
+			READ = True
+			WRITE = False
+			for x in range(int(custom_config["GENERAL"]["num_read_writes"])):
+				read_or_write = random.choice([True, False])
+				allowed_nodes = list(nodes-left_nodes-crash_nodes-in_use)
+				if allowed_nodes:
+					p = random.choice(allowed_nodes)
+					output('randomly chosen node is: ', p)
+					in_use.add(p)
+					if read_or_write == READ:
+						test_read(p)
+						output("Issuing a read command")
+					else:
+						val = random.randint(1,100)
+						output("Issuing a write command with value: ", val)
+						test_write(p, val)
+				else:
+					output("No nodes present to perform read or write operation")      
+					output("Skipping one round...")
+					rounds-=1
+					break
 
 
-  def check_condition_1():
-    # Test cases  for checking join eventually takes place for a node that never crashed or left 
-    rounds= int(custom_config['GENERAL']['num_of_rounds'])
-    for i in range(rounds):
-        output('ROUND NUMBER:',i)
-        r=random.randint(1,4) 
-        if r==1:          
-          p = test_enter()
-          if p:
-            output('Making a node leave before joining', p)
-            # allow the enter message to be received
-            time.sleep(max_delay)
-            test_leave(p)
-
-        elif r==2:        
-          p = test_enter()
-          output('Making a node crash before joining', p)
-          # allow the enter message to be received
-          time.sleep(max_delay)
-          crash_node(p)
-
-        elif r==3:
-          p = test_enter()
-          output('Making a node go down before joining', p)        
-          # allow the enter message to be received
-          time.sleep(max_delay)
-          output('Sending sleep to ',p)
-          send('sleep',to=p)
-        else:
-          output('Nothing to do in this round') 
+	def test_condition_1_invariant():
+		# Reference: arXiv:1708.03274 [cs.DC] Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
+		# "Emulating a Shared Register in a System that Never Stops Changing", August, 2015.page 3, para 6, point 1
+		error_found = False
+		output("Testing join times of nodes")
+		for pid in join_times:
+			if pid in joined and join_times[pid] > join_delay:
+				output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(pid, join_times[pid], join_delay))
+				error_found = True
+		entered_not_join = list(set(entered) - set(joined))
+		for pid in entered_not_join:
+			if pid in crash_nodes:
+				output("\nProcess {} crashed before joining".format(pid))
+			elif pid in left_nodes:
+				output("\nProcess {} left before joining".format(pid))
+			else:
+				output("\n###ERROR process never joined!!!")
+				error_found = True
+		if not error_found:
+			output("Join time is within permissible range for all nodes")
+		
+	
+	def anyof(s):
+		return next(iter(s)) if s else None
 
 
-  def check_condition_3():
-    # The read and write operations are atomic:
-    #there is an ordering of all completed reads and writes
-    #and some subset of the uncompleted writes such that
-    #every read returns the value of the latest preceding
-    #write (or the initial value of the register if there is no
-    #preceding write) and, if an operation op1 finishes before
-    #another operation op2 begins, then op1 occurs before
-    #op2 in the ordering.
-    
-    # The idea is the we keep testing our read and writes. A number of random reads and random writes.
-    # Once we have that test to ensure that if a preceding write is complete, a read returns the correct values
-  
-    # Now that we have made out read and writes, we check the schedulers 
-    # received queue to check whether the data returned is ordered correctly.
+	def check_condition_1():
+		# Test cases  for checking join eventually takes place for a node that never crashed or left 
+		rounds= int(custom_config['GENERAL']['num_of_rounds'])
+		for i in range(rounds):
+			output('ROUND NUMBER:',i)
+			r=random.randint(1,4) 
+			if r==1:          
+				p = test_enter()
+				if p:
+					output('Making a node leave before joining', p)
+					# allow the enter message to be received
+					time.sleep(max_delay)
+					test_leave(p)
 
-    output("Read write order is: ", readwriteorder)    
-    def getPreviousWrite(readwrites):
-        # Search for the first write from the end
-        for item in reversed(readwrites):
-            if item[0] == "write":
-                return item
-    def getFirstValReturnedByProcess(readwrites, pid):
-        # Get the value of return for the corresponding read start.
+			elif r==2:        
+				p = test_enter()
+				output('Making a node crash before joining', p)
+				# allow the enter message to be received
+				time.sleep(max_delay)
+				crash_node(p)
 
-        for item in readwrites:
-            if item[0] == "readend" and item[3] == pid:
-                return item[4]
-        return None
-
-    # For every read, find the previous write. Then check whether the values match. If they don't 
-    # we have a problem.
-    # We check from the second element in the list because we don't care about the first read.
-    for i in range(1, len(readwriteorder)):
-        item = readwriteorder[i]
-        # We have a read, find the previous write or ensure that there is no write if the value is None
-        if item[0] == 'readstarttime':
-            p = item[3]
-            # Get the value the read returned
-            val = getFirstValReturnedByProcess(readwriteorder[i:], p)
-            previouswrite = getPreviousWrite(readwriteorder[:i])
-            if previouswrite == None:
-                if val != None:
-                    output("ERRORa!")
-            else:
-                if val == None:
-                    output("ERRORb!")
-                elif val != previouswrite[4]:
-                    output("ERRORc!")
+			elif r==3:
+				p = test_enter()
+				output('Making a node go down before joining', p)        
+				# allow the enter message to be received
+				time.sleep(max_delay)
+				output('Sending sleep to ',p)
+				send('sleep',to=p)
+			else:
+				output('Nothing to do in this round') 
 
 
-  def run():
-    # check_condition_1()
-    test_consistency()
-    # test_condition_3()    
-    # check_condition_1()
-    output('Exited the loop')
-    await(received('done'))
-    check_condition_3()
-    test_condition_1_invariant()
-    check_condition_2()
-    print_stats()
-    output('scheduler terminating')
+	def check_condition_3():
+		# The read and write operations are atomic:
+		#there is an ordering of all completed reads and writes
+		#and some subset of the uncompleted writes such that
+		#every read returns the value of the latest preceding
+		#write (or the initial value of the register if there is no
+		#preceding write) and, if an operation op1 finishes before
+		#another operation op2 begins, then op1 occurs before
+		#op2 in the ordering.
+		
+		# The idea is the we keep testing our read and writes. A number of random reads and random writes.
+		# Once we have that test to ensure that if a preceding write is complete, a read returns the correct values
+	  
+		# Now that we have made out read and writes, we check the schedulers 
+		# received queue to check whether the data returned is ordered correctly.
+
+		output("Read write order is: ", readwriteorder)    
+		def getPreviousWrite(readwrites):
+			# Search for the first write from the end
+			for item in reversed(readwrites):
+				if item[0] == "write":
+					return item
+		def getFirstValReturnedByProcess(readwrites, pid):
+			# Get the value of return for the corresponding read start.
+
+			for item in readwrites:
+				if item[0] == "readend" and item[3] == pid:
+					return item[4]
+			return None
+
+		# For every read, find the previous write. Then check whether the values match. If they don't 
+		# we have a problem.
+		# We check from the second element in the list because we don't care about the first read.
+		for i in range(1, len(readwriteorder)):
+			item = readwriteorder[i]
+			# We have a read, find the previous write or ensure that there is no write if the value is None
+			if item[0] == 'readstarttime':
+				p = item[3]
+				# Get the value the read returned
+				val = getFirstValReturnedByProcess(readwriteorder[i:], p)
+				previouswrite = getPreviousWrite(readwriteorder[:i])
+				if previouswrite == None:
+					if val != None:
+						output("ERRORa!")
+				else:
+					if val == None:
+						output("ERRORb!")
+					elif val != previouswrite[4]:
+						output("ERRORc!")
 
 
-  def get_count_before(ts):
-    valid_events =  [x for x in enterleaveorder if x[0] < ts]
-    if valid_events:
-        # Get the count from the lastest event
-        return valid_events[-1][1]
-    else:
-        return int(NUM_INIT_NODE)
+	def run():
+		# check_condition_1()
+		test_consistency()
+		# test_condition_3()    
+		# check_condition_1()
+		output('Exited the loop')
+		await(received('done'))
+		check_condition_3()
+		test_condition_1_invariant()
+		check_condition_2()
+		print_stats()
+		output('scheduler terminating')
 
 
-  def get_event_count_in(start, end):
-      ret=[x for x in enterleaveorder if x[0]<end and x[0] > start]
-      return len(ret)      
+	def get_count_before(ts):
+		valid_events =  [x for x in enterleaveorder if x[0] < ts]
+		if valid_events:
+			# Get the count from the lastest event
+			return valid_events[-1][1]
+		else:
+			return int(NUM_INIT_NODE)
 
 
-  def crash_allowed():
-    # Check the number of crash in current time - D
-    # If this is greater than delta*N(t-D) don't allow failure
-    curtime = time.time()
-    prevtime = curtime - max_delay
-    nt = get_count_before(prevtime)
-    if nt*float(DELTA) > len(crash_nodes)+1:
-      return False
-    else:
-      return True
+	def get_event_count_in(start, end):
+		ret=[x for x in enterleaveorder if x[0]<end and x[0] > start]
+		return len(ret)      
 
 
-  def churn_allowed():
-      # Check the number of enter and leaves in current time - D
-      # If this is greater than alpha*N(t-D) don't allow churn
-      curtime = time.time()
-      prevtime = curtime - max_delay
-      nt = get_count_before(prevtime)
-      # output("ALPHA: {0}".format(ALPHA))
-      # output("number of nodes: {0}".format(nt))
-      if nt*float(ALPHA) < (get_event_count_in(prevtime, curtime)+1):
-        return False
-      else:
-        return True
+	def crash_allowed():
+		# Check the number of crash in current time - D
+		# If this is greater than delta*N(t-D) don't allow failure
+		curtime = time.time()
+		prevtime = curtime - max_delay
+		nt = get_count_before(prevtime)
+		if nt*float(DELTA) > len(crash_nodes)+1:
+			return False
+		else:
+			return True
 
 
-  def test_leave(p):
-      if not churn_allowed():
-        output('NODE CANNOT LEAVE THE SYSTEM')
-        return None 
-      enterleaveorder.append([time.time(), len(nodes)])
-      send('leave-signal', to= p)
-      output('making {0} node leave'.format(p))
-      left_nodes.add(p)
-      nodes.remove(p)
-      return p
+	def churn_allowed():
+		# Check the number of enter and leaves in current time - D
+		# If this is greater than alpha*N(t-D) don't allow churn
+		curtime = time.time()
+		prevtime = curtime - max_delay
+		nt = get_count_before(prevtime)
+		# output("ALPHA: {0}".format(ALPHA))
+		# output("number of nodes: {0}".format(nt))
+		if nt*float(ALPHA) < (get_event_count_in(prevtime, curtime)+1):
+			return False
+		else:
+			return True
 
 
-  def test_enter():
-      # returns the pid of the node entering, 'None' if system 
-      # doesn't allow enter.
-      if not churn_allowed():
-        output("NEW NODE CANNOT ENTER THE SYSTEM")
-        return None
-      enterleaveorder.append([time.time(), len(nodes)])
-      p = new(Node, [set(), self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
-      start(p)
-      nodes.add(p)
-      return p
+	def test_leave(p):
+		if not churn_allowed():
+			output('NODE CANNOT LEAVE THE SYSTEM')
+			return None 
+		enterleaveorder.append([time.time(), len(nodes)])
+		send('leave-signal', to= p)
+		output('making {0} node leave'.format(p))
+		left_nodes.add(p)
+		nodes.remove(p)
+		return p
 
 
-  def receive(msg='joined', from_=p):
-      join_times[p] = time.time() - join_times[p]
-      output('join operation completed for ', p)
-      joined.add(p)
+	def test_enter():
+		# returns the pid of the node entering, 'None' if system 
+		# doesn't allow enter.
+		if not churn_allowed():
+			output("NEW NODE CANNOT ENTER THE SYSTEM")
+			return None
+		enterleaveorder.append([time.time(), len(nodes)])
+		p = new(Node, [set(), self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
+		start(p)
+		nodes.add(p)
+		return p
 
 
-  def test_read(p):
-      send('read', to= p)
-      if p in read_times:
-        read_times[p].append(time.time())
-      else:
-        read_times[p] = [time.time()]
-
-      
-  def receive(msg=('return',temp), from_=p):
-      output('read returns with value ', temp)
-      read_times[p][-1] = time.time() - read_times[p][-1]
-      # p is no longer in use, so remove it from the in_use set
-      in_use.remove(p)
-      
-
-  def test_write(p,val):
-      output('test write start')
-      send(('write',val), to= p)
-      if p in write_times:
-        write_times[p].append(time.time())
-      else:
-        write_times[p] = [time.time()]
-
-      
-  def receive(msg=('ack'), from_=p):
-      output('write returned an ack from: ', p)
-      write_times[p][-1] = time.time() - write_times[p][-1]
-      # p is no longer in use, so remove it from the in_use set
-      in_use.remove(p)
+	def receive(msg='joined', from_=p):
+		join_times[p] = time.time() - join_times[p]
+		output('join operation completed for ', p)
+		joined.add(p)
 
 
-  def receive(msg = ('bcast',m), from_=pid):
-      if m[0] == "enter":
-        join_times[pid] = time.time()
-      send(m, to=nodes-crash_nodes)
+	def test_read(p):
+		send('read', to= p)
+		if p in read_times:
+			read_times[p].append(time.time())
+		else:
+			read_times[p] = [time.time()]
 
-       
-  def receive(msg= ('writeupdatetime', num, wid, val), from_=pid):
-    readwriteorder.append([num, wid,'write', pid, val])
+	  
+	def receive(msg=('return',temp), from_=p):
+		output('read returns with value ', temp)
+		read_times[p][-1] = time.time() - read_times[p][-1]
+		# p is no longer in use, so remove it from the in_use set
+		in_use.remove(p)
+	  
+
+	def test_write(p,val):
+		output('test write start')
+		send(('write',val), to= p)
+		if p in write_times:
+			write_times[p].append(time.time())
+		else:
+			write_times[p] = [time.time()]
+
+	  
+	def receive(msg=('ack'), from_=p):
+		output('write returned an ack from: ', p)
+		write_times[p][-1] = time.time() - write_times[p][-1]
+		# p is no longer in use, so remove it from the in_use set
+		in_use.remove(p)
 
 
-  def receive(msg=('readstarttime', num, wid), from_=pid):
-    readwriteorder.append([num, wid,'read', pid])
+	def receive(msg = ('bcast',m), from_=pid):
+		if m[0] == "enter":
+			join_times[pid] = time.time()
+		send(m, to=nodes-crash_nodes)
+
+	   
+	def receive(msg= ('writeupdatetime', num, wid, val), from_=pid):
+		readwriteorder.append([num, wid,'write', pid, val])
 
 
-  def receive(msg=('readendtime', num, wid, val), from_=pid):
-    readwriteorder.append([num, wid, 'readend', pid, val])
+	def receive(msg=('readstarttime', num, wid), from_=pid):
+		readwriteorder.append([num, wid,'read', pid])
 
 
-  def check_condition_2():
-    # read and write for a non-failed, non-crashed node should be completed within 2D
-    D=max_delay
-    output("Outputting crashed nodes", crash_nodes)
-    writetbl = [["Process ID", "Write Time", "Reason"]]
-    readtbl = [["Process ID", "Read Time", "Reason"]]
-    goodreads = []
-    goodwrites = []
-    goodjoins = []
-    for i in read_times:
-        if i in crash_nodes:
-            readtbl.append([i, "-", "Crashed"])
-            continue
-        elif i in left_nodes:
-            readtbl.append([i, "-", "Left"])
-            continue
-        readtbl.append([i, statistics.mean(read_times[i]), "-"])
-        goodreads += [x for x in read_times[i]]
-    for i in write_times:
-        if i in crash_nodes:
-            writetbl.append([i, "-", "Crashed"])
-            continue
-        elif i in left_nodes:
-            writetbl.append([i, "-", "Left"])
-            continue
-        writetbl.append([i, statistics.mean(write_times[i]), "-"])
-        goodwrites += [x for x in write_times[i]]
-        
-    table = [["Process ID", "Join Time", "Reason"]]
-    for pid in join_times:
-      if pid in joined and join_times[pid] < 8*max_delay+100:
-        table.append([pid, join_times[pid], "-"])
-        goodjoins.append(join_times[pid])
-      else:
-        if pid in crash_nodes:
-            table.append([pid, "-", "CRASHED"])
-        elif pid in left_nodes:
-            table.append([pid, "-", "LEFT"])
-    print(tabulate(table, headers="firstrow", tablefmt="grid"))
-    print(tabulate(writetbl, headers="firstrow", tablefmt="grid"))
-    print(tabulate(readtbl, headers="firstrow", tablefmt="grid"))
-    if await(False): pass
-    elif timeout(10):
-      output("TO / Writing to file")
-      l = list(setof(ct, received(('cputime', ct))))
-    output("Writing to file")
-    with open("results.csv", "a") as f:
-        a = statistics.mean(l) if l else 0
-        b = statistics.mean(goodreads) if goodreads else 0
-        c = statistics.mean(goodwrites) if goodwrites else 0
-        d = statistics.mean(goodjoins) if goodjoins else 0
-        st = ", ".join(map(str, [ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, a, b, c, d]))
-        f.write(st + "\n")
+	def receive(msg=('readendtime', num, wid, val), from_=pid):
+		readwriteorder.append([num, wid, 'readend', pid, val])
 
-  def receive(msg = 'done'):
-      -- fds
-      output('done received by scheduler')
-      output('total nodes in the system',nodes)
-      send('done', to= nodes)
+
+	def check_condition_2():
+		# read and write for a non-failed, non-crashed node should be completed within 2D
+		D=max_delay
+		output("Outputting crashed nodes", crash_nodes)
+		writetbl = [["Process ID", "Write Time", "Reason"]]
+		readtbl = [["Process ID", "Read Time", "Reason"]]
+		goodreads = []
+		goodwrites = []
+		goodjoins = []
+		for i in read_times:
+			if i in crash_nodes:
+				readtbl.append([i, "-", "Crashed"])
+				continue
+			elif i in left_nodes:
+				readtbl.append([i, "-", "Left"])
+				continue
+			readtbl.append([i, statistics.mean(read_times[i]), "-"])
+			goodreads += [x for x in read_times[i]]
+		for i in write_times:
+			if i in crash_nodes:
+				writetbl.append([i, "-", "Crashed"])
+				continue
+			elif i in left_nodes:
+				writetbl.append([i, "-", "Left"])
+				continue
+			writetbl.append([i, statistics.mean(write_times[i]), "-"])
+			goodwrites += [x for x in write_times[i]]
+			
+		table = [["Process ID", "Join Time", "Reason"]]
+		for pid in join_times:
+			if pid in joined and join_times[pid] < 8*max_delay+100:
+				table.append([pid, join_times[pid], "-"])
+				goodjoins.append(join_times[pid])
+			else:
+				if pid in crash_nodes:
+					table.append([pid, "-", "CRASHED"])
+				elif pid in left_nodes:
+					table.append([pid, "-", "LEFT"])
+		print(tabulate(table, headers="firstrow", tablefmt="grid"))
+		print(tabulate(writetbl, headers="firstrow", tablefmt="grid"))
+		print(tabulate(readtbl, headers="firstrow", tablefmt="grid"))
+		if await(False): pass
+		elif timeout(10):
+			output("TO / Writing to file")
+			l = list(setof(ct, received(('cputime', ct))))
+		output("Writing to file")
+		with open("results.csv", "a") as f:
+			a = statistics.mean(l) if l else 0
+			b = statistics.mean(goodreads) if goodreads else 0
+			c = statistics.mean(goodwrites) if goodwrites else 0
+			d = statistics.mean(goodjoins) if goodjoins else 0
+			st = ", ".join(map(str, [ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, a, b, c, d]))
+			f.write(st + "\n")
+
+	def receive(msg = 'done'):
+		-- fds
+		output('done received by scheduler')
+		output('total nodes in the system',nodes)
+		send('done', to= nodes)
 
 def reset_globals(cc):
-    DELTA = cc["DELTA"]["default"]
-    ALPHA = cc["ALPHA"]["default"]
-    BETA = cc["BETA"]["default"]
-    GAMMA = cc["GAMMA"]["default"]
-    NUM_NODES = cc["NODE_COUNT"]["default"]
-    D = cc["D"]["default"]
-    return ALPHA, BETA, GAMMA, DELTA, NUM_NODES, D
+	DELTA = cc["DELTA"]["default"]
+	ALPHA = cc["ALPHA"]["default"]
+	BETA = cc["BETA"]["default"]
+	GAMMA = cc["GAMMA"]["default"]
+	NUM_NODES = cc["NODE_COUNT"]["default"]
+	D = cc["D"]["default"]
+	return ALPHA, BETA, GAMMA, DELTA, NUM_NODES, D
 
 
 # ---------------------------------------- #
 #                   MAIN                   #
 # ---------------------------------------- #
 def main():
-  config(clock = Lamport)
-  REPS = 1
-  with open("results.csv", "a") as f:
-    st = ", ".join(["ALPHA", "BETA", "GAMMA", "DELTA", "NUM_NODES", "D", "CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
-    f.write(st + "\n")
-  custom_config = configparser.ConfigParser()
-  custom_config.read('config.ini')
-  ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D = reset_globals(custom_config)
-  output("D is", D)
-  #####################################################################################
-  ## Test Different parameters
-  #####################################################################################
-  NUM_NODES = float(custom_config["NODE_COUNT"]["value_start"])
-  while(NUM_NODES<=float(custom_config["NODE_COUNT"]["value_end"])):
-      output("*******************NUM_NODES*******************", NUM_NODES)
-      scheduler = new(Scheduler,[str(ALPHA), BETA, GAMMA, DELTA, NUM_NODES, D])
-      start(scheduler)
-      time.sleep(40)
-      send('done', to= scheduler)
-      output('sent done to schedule')
-      NUM_NODES += float(custom_config["NODE_COUNT"]["step_size"])
-  
+	config(clock = Lamport)
+	REPS = 1
+	with open("results.csv", "a") as f:
+		st = ", ".join(["ALPHA", "BETA", "GAMMA", "DELTA", "NUM_NODES", "D", "CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
+		f.write(st + "\n")
+	custom_config = configparser.ConfigParser()
+	custom_config.read('config.ini')
+	ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D = reset_globals(custom_config)
+	output("D is", D)
+	#####################################################################################
+	## Test Different parameters
+	#####################################################################################
+	NUM_NODES = float(custom_config["NODE_COUNT"]["value_start"])
+	while(NUM_NODES<=float(custom_config["NODE_COUNT"]["value_end"])):
+		output("*******************NUM_NODES*******************", NUM_NODES)
+		scheduler = new(Scheduler,[str(ALPHA), BETA, GAMMA, DELTA, NUM_NODES, D])
+		start(scheduler)
+		time.sleep(40)
+		send('done', to= scheduler)
+		output('sent done to schedule')
+		NUM_NODES += float(custom_config["NODE_COUNT"]["step_size"])
+
 
   
