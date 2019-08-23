@@ -30,13 +30,21 @@ class Node (process):
         self.join_bound = 0  # $$$
         # number of enter-echo messages received
         self.join_counter = 0  # $$$
+        # true only when Node has received enough left messages, False by default
+        self.is_left = False
+        # number of leave-req-echo msgs to receive before joining
+        self.leave_bound = 0  # @@@
+        # number of enter-echo messages received
+        self.leave_counter = 0  # @@@
+        # sequence number for system state maintained separately by each process
+        self.state_num = 0 # @@@
         # Initially assume every known node has entered and joined
         # set of ENTER, LEAVE, and JOINED events known to node
-        self.Changes = (setof(('enter',q), q in known_nodes) | setof(('join',q), q in known_nodes))  # $$$
+        self.Changes = (setof(('enter',state_num,q), q in known_nodes) | setof(('join',state_num,q), q in known_nodes))  # @@@
         # add to changes if self is one of the initial nodes
         if (known_nodes):  # $$$
-            Changes.add(('enter',self))  # $$$
-            Changes.add(('join',self))  # $$$
+            Changes.add(('enter', state_num, self))  # @@@
+            Changes.add(('join', state_num, self))  # @@@
 
         # ***************************************************************************************** #
         # ---------- Variables for managing churn and reading/writing simulated register ---------- #
@@ -76,8 +84,8 @@ class Node (process):
         # entering in response to receiving enter-signal message from scheduler
 
         if known_nodes == set():  # $$$
-            Changes.add(('enter',self))  # $$$
-            bcast('enter', self)  # $$$
+            Changes.add(('enter', state_num, self))  # $$$
+            bcast('enter', state_num, self)  # @@@
             output('entered, bcasted enter msgs')  # $$$
 
         # -------------------- End of Node setup method -------------------- #
@@ -102,23 +110,30 @@ class Node (process):
     # ******************************************************************* #
     # ----------------- Methods for managing the churn ------------------ #
     # ******************************************************************* #
-    # $$$
     def Present():
         # set of nodes that p believes are currently present (entered but not left)
-        return setof(q, ('enter',q) in Changes, ('leave',q) not in Changes)
+        return setof(q, ('enter',_,q) in Changes, ('leave',_,q) not in Changes) # @@@
 
-    # $$$
-    def receive(msg = ('enter',p)):
+
+    def receive(msg = ('enter',sn,p)):
         # receive message from entering nodes, add to local changes and broadcast to other nodes
-        Changes.add(('enter',p))
-        bcast('enter-echo', Changes, (val, num, w_id), is_joined, p)
+        Changes.add(('enter',sn,p)) # @@@
+        # this is not really required as intitial sn for a node is always 0
+        if sn > state_num: # @@@
+            state_num = sn # @@@
+        bcast('enter-echo', Changes, (val, num, w_id, state_num), is_joined, p) # @@@
 
 
-    def receive(msg = ('enter-echo', C, (v, s, i), j, p)):
+    def receive(msg = ('enter-echo', C, (v, s, i, sn), j, p)):
         # checking sequence number and id for process entering with given process id
-        # if (s, i) > (num, w_id, id):  # @@@
-        #   val, num, w_id = v, s, i  # @@@
+        if sn > state_num: # @@@
+            state_num = sn # @@@
+        if (s, i) > (num, w_id, id):  # $$$
+          val, num, w_id = v, s, i  # $$$
         Changes = Changes | C  # $$$
+        # output('size of Changes: {0}'.format(len(Changes)))
+        # Remove all the joins and enters of the node that have left but not "leaves"
+        Changes = setof((state,_,q), (state,_,q) in Changes, ('leave',_,q) not in Changes or state == 'leave')  # @@@
         if (not is_joined) and (p == self):  # $$$
             if (j == True) and (join_bound == 0):  # $$$
                 #since we are counting join_bound on basis of info from an already joined node
@@ -129,53 +144,89 @@ class Node (process):
                 #we do need join_bound >0 condition because the first few enter-echo messages can be from process not joined in
                 #the system and in this case the join_counter will exceed join_bound which was never set
                 is_joined = True  # $$$
+                state_num += 1 # @@@
                 output('joined')  # $$$
-                Changes.add(('join',self))  # $$$
-                # output('size of Changes: {0}'.format(len(Changes)))
-                Changes = setof((state,q), (state,q) in Changes, ('leave',q) not in Changes or state == 'leave')  # @@@
+                Changes.add(('join',state_num,self))  # $$$
                 # tell scheduler I've joined
                 delayed_send(('joined'), scheduler)  # @@@
                 output('sent joined to scheduler')  # $$$
-                bcast('joined',self)  # $$$
+                bcast('joined',state_num,self)  # $$$
 
 
-    # $$$
-    def receive(msg = ('joined', p)):
+    def receive(msg = ('joined', sn, p)):
         # received joined message from process id and broadcast the msg forward
         # Changes  = c
-        Changes.add(('join',p))
-        Changes.add(('enter',p))
-        bcast('joined-echo',p)
+        if sn > state_num:  # @@@
+            state_num = sn  # @@@
+        Changes.add(('join',state_num,p))  # @@@
+        Changes.add(('enter',0,p))  # @@@
+        bcast('joined-echo',state_num,p)  # @@@
 
 
     # $$$
-    def receive(msg = ('joined-echo',p)):
+    def receive(msg = ('joined-echo', sn, p)):
         # recieved joined echo about from process id
         # Changes = c
-        Changes.add(('join',p))
-        Changes.add(('enter',p))
+        if sn > state_num:  # @@@
+            state_num = sn  # @@@
+        Changes.add(('join',sn,p))
+        Changes.add(('enter',0,p))
 
 
-    # $$$
     def receive(msg = ('leave-signal')):
         # node leaves in response to 'leave-signal' msg from scheduler
-        output('received leave signal')
-        bcast('leave', self)
-        output('exiting...')
-        exit()
+        output('received leave signal')  # @@@
+        # issue a leave request simillar to enter
+        bcast('leave-req', state_num, self)  # @@@
 
 
-    def receive(msg = ('leave',p)):
+    #  @@@
+    def receive(msg = ('leave-req',sn,p)):
+        # receive message from leaving node, add to local changes and broadcast to other nodes
+        Changes.add(('leave-req',sn,p))
+        if sn > state_num:
+            state_num = sn
+        bcast('leave-req-echo', Changes, (val, num, w_id, state_num), is_joined, p)
+
+
+    #  @@@
+    def receive(msg = ('leave-req-echo', C, (v, s, i, sn), j, p)):
+        # checking sequence number, state num and id for process leaving with given process id
+        if sn > state_num:
+            state_num = sn
+        if (s, i) > (num, w_id, id):
+          val, num, w_id = v, s, i
+        Changes = Changes | C
+        # output('size of Changes: {0}'.format(len(Changes)))
+        # Changes = setof((state,_,q), (state,_,q) in Changes, ('leave',_,q) not in Changes or state == 'leave')
+        if (not is_left) and (p == self):
+            if (j == True) and (leave_bound == 0):
+                leave_bound = float(GAMMA) * len(Present())
+                output('leave_bound set to', leave_bound, 'based on Present size of', len(Present()))
+            leave_counter += 1
+            if (leave_counter >= leave_bound) and (leave_bound > 0):
+                is_left = True
+                state_num += 1
+                bcast('leave',state_num,self)
+                output('exiting...')
+                exit()
+
+
+    def receive(msg = ('leave',sn,p)):
         # received leave about process with id
-        Changes.add(('leave',p))  # $$$
-        Changes = Changes - {('enter',p), ('join',p)}  # @@@
-        bcast('leave-echo',p)  # $$$
+        Changes.add(('leave',sn,p))
+        if sn > state_num:
+            state_num = sn
+        # Changes = Changes - {('enter',p), ('join',p)}  # @@@
+        bcast('leave-echo',sn,p)  # @@@
 
 
-    def receive(msg = ('leave-echo',p)):
+    def receive(msg = ('leave-echo',sn,p)):
         # output received leave-echo about process id
-        Changes = Changes - {('enter',p), ('join',p)}  # @@@
-        Changes.add(('leave',p))  # $$$
+        # Changes = Changes - {('enter',p), ('join',p)}  # @@@
+        if sn > state_num:
+            state_num = sn
+        Changes.add(('leave',sn,p))  # $$$
 
 
     # ************************************************************* #
@@ -184,7 +235,7 @@ class Node (process):
     # $$$
     def Members():
         # set of nodes that p believes are currently members (joined but not left)
-        return setof(q, ('join',q) in Changes, ('leave',q) not in Changes)
+        return setof(q, ('join',_,q) in Changes, ('leave',_,q) not in Changes)
 
 
     def receive(msg='read'):
