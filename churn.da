@@ -183,6 +183,7 @@ class Node (process):
     #  @@@
     def receive(msg = ('leave-req',sn,p)):
         # receive message from leaving node, add to local changes and broadcast to other nodes
+        output('received leave req')
         Changes.add(('leave-req',sn,p))
         if sn > state_num:
             state_num = sn
@@ -199,7 +200,8 @@ class Node (process):
         Changes = Changes | C
         # output('size of Changes: {0}'.format(len(Changes)))
         # Changes = setof((state,_,q), (state,_,q) in Changes, ('leave',_,q) not in Changes or state == 'leave')
-        if (not is_left) and (p == self):
+        if (p == self) and (not is_left):
+            output('received leave req echo')
             if (j == True) and (leave_bound == 0):
                 leave_bound = float(GAMMA) * len(Present())
                 output('leave_bound set to', leave_bound, 'based on Present size of', len(Present()))
@@ -660,8 +662,8 @@ class Scheduler (process):
         enterleaveorder.append([time.time(), len(nodes)])
         send('leave-signal', to= p)
         output('making {0} node leave'.format(p))
-        left_nodes.add(p)
-        nodes.remove(p)
+        # left_nodes.add(p)
+        # nodes.remove(p)
         return p
 
 
@@ -718,6 +720,10 @@ class Scheduler (process):
     def receive(msg = ('bcast',m), from_=pid):
         if m[0] == "enter":
             join_times[pid] = time.time()
+        elif m[0] == "leave":
+            left_nodes.add(pid)
+            nodes.remove(pid)
+
         send(m, to=nodes-crash_nodes)
 
        
