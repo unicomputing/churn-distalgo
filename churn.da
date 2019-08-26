@@ -39,7 +39,7 @@ class Node (process):
         # sequence number for system state maintained separately by each process
         self.state_num = 0 # @@@
         # number of sequence number the changes of a left node needs to be retained
-        self.retention_limit = RETEN_COUNT # @@@
+        self.retention_limit = int(RETEN_COUNT) # @@@
         # Initially assume every known node has entered and joined
         # set of ENTER, LEAVE, and JOINED events known to node
         self.Changes = (setof(('enter',state_num,q), q in known_nodes) | setof(('join',state_num,q), q in known_nodes))  # @@@
@@ -139,7 +139,6 @@ class Node (process):
         if (s, i) > (num, w_id, id):  # $$$
           val, num, w_id = v, s, i  # $$$
         Changes = Changes | C  # $$$
-        # output('size of Changes: {0}'.format(len(Changes)))
         # Remove all the joins and enters of the node that have left but not "leaves"
         if (not is_joined) and (p == self):  # $$$
             if (j == True) and (join_bound == 0):  # $$$
@@ -156,12 +155,13 @@ class Node (process):
                 # Discard messages from Changes that satisfy any of the below condition
                 # 1. Message from node that has left and the message is not 'leave'
                 # 2. Message is 'leave' and message has passed retention limit
-                output('Changes: {0}'.format(Changes))
+                output('size of Changes: {0}'.format(len(Changes))) #@@@
                 Changes = setof((state,seq_num,q),
                     (state,seq_num,q) in Changes,
                     ('leave',seq_num,q) not in Changes or state == 'leave' and state_num - seq_num < retention_limit)  # @@@
+                output('size of Changes: {0} and state_num:{1}'.format(len(Changes), state_num)) #@@@
                 Changes.add(('join',state_num,self))  # $$$
-                output('Changes: {0}'.format(Changes))
+
                 # tell scheduler I've joined
                 delayed_send(('joined'), scheduler)  # @@@
                 output('sent joined to scheduler')  # $$$
@@ -466,6 +466,18 @@ class Scheduler (process):
                 test_leave(p)
 
 
+    def churn_nodes_sequentially(count):
+        for _ in range(count):
+            # test_enter()
+            if random.choice(["enter", "leave"]) == "enter":
+                p = test_enter()
+            else:
+                p = random.choice(list(joined-left_nodes-crash_nodes))
+                output('randomly chosen node is', p)
+                test_leave(p)
+            if await(received('joined', from_= p)): pass
+            elif timeout(int(join_delay)): pass
+
     def test_consistency():
         # Just a bunch random tests. Here we go completely crazy and 
         # make things crazy
@@ -473,7 +485,8 @@ class Scheduler (process):
         rounds= int(custom_config['GENERAL']['num_of_rounds'])
         for i in range(rounds):
             output('ROUND NUMBER:',i)
-            churn_random_nodes(int(custom_config['GENERAL']['churn_count']))
+            # churn_random_nodes(int(custom_config['GENERAL']['churn_count']))
+            churn_nodes_sequentially(int(custom_config['GENERAL']['churn_count']))
             p= random.choice(list(nodes-left_nodes-crash_nodes))
 
             r=random.randint(1,10)              #crash with a random probability
@@ -509,6 +522,7 @@ class Scheduler (process):
                     output("Skipping one round...")
                     rounds-=1
                     break
+        output("EnterLeave order is: ", enterleaveorder)
 
 
     def test_condition_1_invariant():
