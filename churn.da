@@ -16,7 +16,7 @@ $$$ - exact copy from algorithm
 #                NODE CLASS                #
 # ---------------------------------------- #
 class Node (process):
-    def setup(known_nodes, scheduler, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D):
+    def setup(known_nodes, scheduler, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT):
         self.custom_config = configparser.ConfigParser()
         self.custom_config.read('config.ini')
 
@@ -38,6 +38,8 @@ class Node (process):
         self.leave_counter = 0  # @@@
         # sequence number for system state maintained separately by each process
         self.state_num = 0 # @@@
+        # number of sequence number the changes of a left node needs to be retained
+        self.retention_limit = RETEN_COUNT # @@@
         # Initially assume every known node has entered and joined
         # set of ENTER, LEAVE, and JOINED events known to node
         self.Changes = (setof(('enter',state_num,q), q in known_nodes) | setof(('join',state_num,q), q in known_nodes))  # @@@
@@ -121,6 +123,12 @@ class Node (process):
         # this is not really required as intitial sn for a node is always 0
         if sn > state_num: # @@@
             state_num = sn # @@@
+        # Discard messages from Changes that satisfy any of the below condition:
+        # 1. Message from node that has left and the message is not 'leave'
+        # 2. Message is 'leave' and message has passed retention limit
+        Changes = setof((state,seq_num,q),
+            (state,seq_num,q) in Changes,
+            ('leave',seq_num,q) not in Changes or state == 'leave' and state_num - seq_num < retention_limit)  # @@@
         bcast('enter-echo', Changes, (val, num, w_id, state_num), is_joined, p) # @@@
 
 
@@ -133,7 +141,6 @@ class Node (process):
         Changes = Changes | C  # $$$
         # output('size of Changes: {0}'.format(len(Changes)))
         # Remove all the joins and enters of the node that have left but not "leaves"
-        Changes = setof((state,_,q), (state,_,q) in Changes, ('leave',_,q) not in Changes or state == 'leave')  # @@@
         if (not is_joined) and (p == self):  # $$$
             if (j == True) and (join_bound == 0):  # $$$
                 #since we are counting join_bound on basis of info from an already joined node
@@ -146,7 +153,15 @@ class Node (process):
                 is_joined = True  # $$$
                 state_num += 1 # @@@
                 output('joined')  # $$$
+                # Discard messages from Changes that satisfy any of the below condition
+                # 1. Message from node that has left and the message is not 'leave'
+                # 2. Message is 'leave' and message has passed retention limit
+                output('Changes: {0}'.format(Changes))
+                Changes = setof((state,seq_num,q),
+                    (state,seq_num,q) in Changes,
+                    ('leave',seq_num,q) not in Changes or state == 'leave' and state_num - seq_num < retention_limit)  # @@@
                 Changes.add(('join',state_num,self))  # $$$
+                output('Changes: {0}'.format(Changes))
                 # tell scheduler I've joined
                 delayed_send(('joined'), scheduler)  # @@@
                 output('sent joined to scheduler')  # $$$
@@ -158,9 +173,11 @@ class Node (process):
         # Changes  = c
         if sn > state_num:  # @@@
             state_num = sn  # @@@
-        Changes.add(('join',state_num,p))  # @@@
+        Changes.add(('join',sn,p))  # @@@
+        # enter always have 0 sequence number to maintain consistency when node receives join but no enter
+        # also enter sequence number is not important at all
         Changes.add(('enter',0,p))  # @@@
-        bcast('joined-echo',state_num,p)  # @@@
+        bcast('joined-echo',sn,p)  # @@@
 
 
     # $$$
@@ -170,6 +187,8 @@ class Node (process):
         if sn > state_num:  # @@@
             state_num = sn  # @@@
         Changes.add(('join',sn,p))
+        # enter always have 0 sequence number to maintain consistency when node receives join but no enter'
+        # also enter sequence number is not important at all
         Changes.add(('enter',0,p))
 
 
@@ -183,10 +202,10 @@ class Node (process):
     #  @@@
     def receive(msg = ('leave-req',sn,p)):
         # receive message from leaving node, add to local changes and broadcast to other nodes
-        output('received leave req')
-        Changes.add(('leave-req',sn,p))
         if sn > state_num:
             state_num = sn
+        # leave-req sequence number is not important adding just for the sake of consistency(same as enter)
+        Changes.add(('leave-req',sn,p))
         bcast('leave-req-echo', Changes, (val, num, w_id, state_num), is_joined, p)
 
 
@@ -201,7 +220,6 @@ class Node (process):
         # output('size of Changes: {0}'.format(len(Changes)))
         # Changes = setof((state,_,q), (state,_,q) in Changes, ('leave',_,q) not in Changes or state == 'leave')
         if (p == self) and (not is_left):
-            output('received leave req echo')
             if (j == True) and (leave_bound == 0):
                 leave_bound = float(GAMMA) * len(Present())
                 output('leave_bound set to', leave_bound, 'based on Present size of', len(Present()))
@@ -220,6 +238,7 @@ class Node (process):
         if sn > state_num:
             state_num = sn
         # Changes = Changes - {('enter',p), ('join',p)}  # @@@
+        # Changes = Changes - setof(('leave',seq_num,q), ('leave',seq_num,q) in Changes, sn - seq_num > retention_limit) # @@@
         bcast('leave-echo',sn,p)  # @@@
 
 
@@ -367,7 +386,7 @@ class Node (process):
 #             SCHEDULER CLASS              #
 # ---------------------------------------- #
 class Scheduler (process):
-    def setup(ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D):
+    def setup(ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT):
         self.custom_config = configparser.ConfigParser()
         self.custom_config.read('config.ini') 
         self.nodes = new(Node, num=int(NUM_INIT_NODE))
@@ -409,7 +428,7 @@ class Scheduler (process):
         #      self.f = open("results.csv", "a")
         #      self.WRITER = csv.writer(f, delimiter=",")
 
-        for p in nodes: setup(p, [nodes-{p}, self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
+        for p in nodes: setup(p, [nodes-{p}, self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT])
         start(nodes)
         output('nodes present initially are', nodes)
 
@@ -674,7 +693,7 @@ class Scheduler (process):
             output("NEW NODE CANNOT ENTER THE SYSTEM")
             return None
         enterleaveorder.append([time.time(), len(nodes)])
-        p = new(Node, [set(), self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D])
+        p = new(Node, [set(), self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT])
         start(p)
         nodes.add(p)
         return p
@@ -790,7 +809,7 @@ class Scheduler (process):
             b = statistics.mean(goodreads) if goodreads else 0
             c = statistics.mean(goodwrites) if goodwrites else 0
             d = statistics.mean(goodjoins) if goodjoins else 0
-            st = ", ".join(map(str, [ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, a, b, c, d]))
+            st = ", ".join(map(str, [ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT, a, b, c, d]))
             f.write(st + "\n")
 
     def receive(msg = 'done'):
@@ -806,7 +825,8 @@ def reset_globals(cc):
     GAMMA = cc["GAMMA"]["default"]
     NUM_NODES = cc["NODE_COUNT"]["default"]
     D = cc["D"]["default"]
-    return ALPHA, BETA, GAMMA, DELTA, NUM_NODES, D
+    RETEN_COUNT = cc["RETEN_COUNT"]["default"]
+    return ALPHA, BETA, GAMMA, DELTA, NUM_NODES, D,RETEN_COUNT
 
 
 # ---------------------------------------- #
@@ -816,19 +836,19 @@ def main():
     config(clock = Lamport)
     REPS = 1
     with open("results.csv", "a") as f:
-        st = ", ".join(["ALPHA", "BETA", "GAMMA", "DELTA", "NUM_NODES", "D", "CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
+        st = ", ".join(["ALPHA", "BETA", "GAMMA", "DELTA", "NUM_NODES", "D", "RETEN_COUNT", "CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
         f.write(st + "\n")
     custom_config = configparser.ConfigParser()
     custom_config.read('config.ini')
-    ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D = reset_globals(custom_config)
-    output("D is", D)
+    ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT = reset_globals(custom_config)
+    output("RETEN_COUNT is", RETEN_COUNT)
     #####################################################################################
     ## Test Different parameters
     #####################################################################################
     NUM_NODES = float(custom_config["NODE_COUNT"]["value_start"])
     while(NUM_NODES<=float(custom_config["NODE_COUNT"]["value_end"])):
         output("*******************NUM_NODES*******************", NUM_NODES)
-        scheduler = new(Scheduler,[str(ALPHA), BETA, GAMMA, DELTA, NUM_NODES, D])
+        scheduler = new(Scheduler,[str(ALPHA), BETA, GAMMA, DELTA, NUM_NODES, D, RETEN_COUNT])
         start(scheduler)
         time.sleep(40)
         send('done', to= scheduler)
