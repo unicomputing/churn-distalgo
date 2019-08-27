@@ -126,9 +126,11 @@ class Node (process):
         # Discard messages from Changes that satisfy any of the below condition:
         # 1. Message from node that has left and the message is not 'leave'
         # 2. Message is 'leave' and message has passed retention limit
-        Changes = setof((state,seq_num,q),
-            (state,seq_num,q) in Changes,
-            ('leave',seq_num,q) not in Changes or state == 'leave' and state_num - seq_num < retention_limit)  # @@@
+        Changes = setof((state, seq_num, q), (state, seq_num, q) in Changes,
+            not some(('leave', _, _q) in Changes) or state == 'leave' and state_num - seq_num < retention_limit) # @@@
+        # Changes = setof((state,seq_num,q),
+        #     (state,seq_num,q) in Changes,
+        #     ('leave',seq_num,q) not in Changes or state == 'leave' and state_num - seq_num < retention_limit)
         bcast('enter-echo', Changes, (val, num, w_id, state_num), is_joined, p) # @@@
 
 
@@ -155,11 +157,15 @@ class Node (process):
                 # Discard messages from Changes that satisfy any of the below condition
                 # 1. Message from node that has left and the message is not 'leave'
                 # 2. Message is 'leave' and message has passed retention limit
+                # output("Changes:", Changes)
                 output('size of Changes: {0}'.format(len(Changes))) #@@@
-                Changes = setof((state,seq_num,q),
-                    (state,seq_num,q) in Changes,
-                    ('leave',seq_num,q) not in Changes or state == 'leave' and state_num - seq_num < retention_limit)  # @@@
+                Changes = setof((state, seq_num, q), (state, seq_num, q) in Changes,
+                    not some(('leave', _, _q) in Changes) or state == 'leave' and state_num - seq_num < retention_limit)
+                # Changes = setof((state,seq_num,q),
+                #     (state,seq_num,q) in Changes,
+                #     ('leave',seq_num,q) not in Changes or state == 'leave' and state_num - seq_num < retention_limit)  # @@@
                 output('size of Changes: {0} and state_num:{1}'.format(len(Changes), state_num)) #@@@
+                # output("Changes:", Changes)
                 Changes.add(('join',state_num,self))  # $$$
 
                 # tell scheduler I've joined
@@ -227,6 +233,7 @@ class Node (process):
             if (leave_counter >= leave_bound) and (leave_bound > 0):
                 is_left = True
                 state_num += 1
+                send(('leave'), to=scheduler)  # @@@
                 bcast('leave',state_num,self)
                 output('exiting...')
                 exit()
@@ -466,17 +473,22 @@ class Scheduler (process):
                 test_leave(p)
 
 
-    def churn_nodes_sequentially(count):
+    def churn_nodes_sync_async(count):
+        i = 0
         for _ in range(count):
-            # test_enter()
+            output('Enter-Leave count: {0}'.format(i))
+            # to decide whether to make operation is async or sync
+            r=random.randint(1,10)
             if random.choice(["enter", "leave"]) == "enter":
                 p = test_enter()
             else:
                 p = random.choice(list(joined-left_nodes-crash_nodes))
                 output('randomly chosen node is', p)
-                test_leave(p)
-            if await(received('joined', from_= p)): pass
-            elif timeout(int(join_delay)): pass
+                p = test_leave(p)
+            if r > 0:
+                i += 1
+                if await(received('joined', from_= p) or received('leave', from_= p)): pass
+                elif timeout(int(join_delay)): pass
 
     def test_consistency():
         # Just a bunch random tests. Here we go completely crazy and 
@@ -486,7 +498,7 @@ class Scheduler (process):
         for i in range(rounds):
             output('ROUND NUMBER:',i)
             # churn_random_nodes(int(custom_config['GENERAL']['churn_count']))
-            churn_nodes_sequentially(int(custom_config['GENERAL']['churn_count']))
+            churn_nodes_sync_async(int(custom_config['GENERAL']['churn_count']))
             p= random.choice(list(nodes-left_nodes-crash_nodes))
 
             r=random.randint(1,10)              #crash with a random probability
@@ -652,7 +664,7 @@ class Scheduler (process):
         valid_events =  [x for x in enterleaveorder if x[0] < ts]
         if valid_events:
             # Get the count from the lastest event
-            return valid_events[-1][1]
+            return valid_events[-1][2]
         else:
             return int(NUM_INIT_NODE)
 
@@ -692,10 +704,11 @@ class Scheduler (process):
         if not churn_allowed():
             output('NODE CANNOT LEAVE THE SYSTEM')
             return None 
-        enterleaveorder.append([time.time(), len(nodes)])
+        enterleaveorder.append([time.time(), 'leave', len(nodes)])
         send('leave-signal', to= p)
         output('making {0} node leave'.format(p))
-        # left_nodes.add(p)
+        # to avoid calling leave/join/crash operation on the same node
+        left_nodes.add(p)
         # nodes.remove(p)
         return p
 
@@ -706,7 +719,7 @@ class Scheduler (process):
         if not churn_allowed():
             output("NEW NODE CANNOT ENTER THE SYSTEM")
             return None
-        enterleaveorder.append([time.time(), len(nodes)])
+        enterleaveorder.append([time.time(), 'enter', len(nodes)])
         p = new(Node, [set(), self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT])
         start(p)
         nodes.add(p)
@@ -717,6 +730,13 @@ class Scheduler (process):
         join_times[p] = time.time() - join_times[p]
         output('join operation completed for ', p)
         joined.add(p)
+
+
+    def receive(msg='leave', from_=p):
+        # join_times[p] = time.time() - join_times[p]
+        output('Leave operation completed for ', p)
+        left_nodes.add(p)
+        nodes.remove(p)
 
 
     def test_read(p):
@@ -753,9 +773,6 @@ class Scheduler (process):
     def receive(msg = ('bcast',m), from_=pid):
         if m[0] == "enter":
             join_times[pid] = time.time()
-        elif m[0] == "leave":
-            left_nodes.add(pid)
-            nodes.remove(pid)
 
         send(m, to=nodes-crash_nodes)
 
