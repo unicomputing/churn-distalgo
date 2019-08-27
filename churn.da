@@ -114,7 +114,8 @@ class Node (process):
     # ******************************************************************* #
     def Present():
         # set of nodes that p believes are currently present (entered but not left)
-        return setof(q, ('enter',_,q) in Changes, ('leave',_,q) not in Changes) # @@@
+        return setof(q, ('enter', _, q) in Changes, not some(('leave', _, _q) in Changes)) # @@@
+
 
 
     def receive(msg = ('enter',sn,p)):
@@ -233,8 +234,9 @@ class Node (process):
             if (leave_counter >= leave_bound) and (leave_bound > 0):
                 is_left = True
                 state_num += 1
-                send(('leave'), to=scheduler)  # @@@
+                output('size of Changes: {0} and state_num:{1}'.format(len(Changes), state_num))
                 bcast('leave',state_num,self)
+                send(('leave'), to=scheduler)  # @@@
                 output('exiting...')
                 exit()
 
@@ -263,7 +265,7 @@ class Node (process):
     # $$$
     def Members():
         # set of nodes that p believes are currently members (joined but not left)
-        return setof(q, ('join',_,q) in Changes, ('leave',_,q) not in Changes)
+        return setof(q, ('join', _, q) in Changes, not some(('leave', _, _q) in Changes)) # @@@
 
 
     def receive(msg='read'):
@@ -376,7 +378,8 @@ class Node (process):
 
     # @@@
     def receive(msg= 'done'):
-        send(('cputime', time.process_time()-cpu_start_time), to=scheduler)
+        # output('Leaves:', setof((stn, p), ('leave', stn, p) in Changes))
+        send(('metrics', time.process_time()-cpu_start_time, Members()), to=scheduler)
         exit()
 
 
@@ -403,6 +406,8 @@ class Scheduler (process):
         self.entered = nodes
         # A map with process_id -> time_taken_from_enter_to_join
         self.join_times = {}
+        # A map with process_id -> time_taken_from_leave-req_to_leave
+        self.leave_times = {}
         # A map with process_id -> [time_taken_to_write]
         self.write_times = {} 
         # A map with process_id -> [time_taken_to_read]
@@ -431,6 +436,8 @@ class Scheduler (process):
         self.delay_adjustment = float(self.custom_config["GENERAL"]["delay_adjustment"])
         #### END Variable declarations
         self.join_delay = (max_delay * 4)  + delay_adjustment
+        # Variable to check eventual consistency of all leave operation
+        self.success = True
 
         #      self.f = open("results.csv", "a")
         #      self.WRITER = csv.writer(f, delimiter=",")
@@ -450,6 +457,13 @@ class Scheduler (process):
                     table.append([pid, "-", "CRASHED"])
                 elif pid in left_nodes:
                     table.append([pid, "-", "LEFT"])
+        print(tabulate(table, headers="firstrow", tablefmt="grid"))
+        table = [["Process ID", "Leave Time", "Reason"]]
+        for pid in leave_times:
+            if pid not in nodes and leave_times[pid] < 8*max_delay+100:
+                table.append([pid, leave_times[pid], "-"])
+            else:
+                table.append([pid, "-", "-"])
         print(tabulate(table, headers="firstrow", tablefmt="grid"))
 
 
@@ -485,8 +499,9 @@ class Scheduler (process):
                 p = random.choice(list(joined-left_nodes-crash_nodes))
                 output('randomly chosen node is', p)
                 p = test_leave(p)
-            if r > 0:
+            if p:
                 i += 1
+            if r < 5:
                 if await(received('joined', from_= p) or received('leave', from_= p)): pass
                 elif timeout(int(join_delay)): pass
 
@@ -707,9 +722,9 @@ class Scheduler (process):
         enterleaveorder.append([time.time(), 'leave', len(nodes)])
         send('leave-signal', to= p)
         output('making {0} node leave'.format(p))
-        # to avoid calling leave/join/crash operation on the same node
+        # to avoid calling leave/join/crash operation on already left node
         left_nodes.add(p)
-        # nodes.remove(p)
+        leave_times[p] = time.time()
         return p
 
 
@@ -723,6 +738,7 @@ class Scheduler (process):
         p = new(Node, [set(), self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT])
         start(p)
         nodes.add(p)
+        join_times[p] = time.time()
         return p
 
 
@@ -733,7 +749,7 @@ class Scheduler (process):
 
 
     def receive(msg='leave', from_=p):
-        # join_times[p] = time.time() - join_times[p]
+        leave_times[p] = time.time() - leave_times[p]
         output('Leave operation completed for ', p)
         left_nodes.add(p)
         nodes.remove(p)
@@ -771,9 +787,6 @@ class Scheduler (process):
 
 
     def receive(msg = ('bcast',m), from_=pid):
-        if m[0] == "enter":
-            join_times[pid] = time.time()
-
         send(m, to=nodes-crash_nodes)
 
        
@@ -793,6 +806,8 @@ class Scheduler (process):
         # read and write for a non-failed, non-crashed node should be completed within 2D
         D=max_delay
         output("Outputting crashed nodes", crash_nodes)
+        if success:
+            output('Verified eventual consistency for leaves')
         writetbl = [["Process ID", "Write Time", "Reason"]]
         readtbl = [["Process ID", "Read Time", "Reason"]]
         goodreads = []
@@ -833,7 +848,7 @@ class Scheduler (process):
         if await(False): pass
         elif timeout(10):
             output("TO / Writing to file")
-            l = list(setof(ct, received(('cputime', ct))))
+            l = list(setof(ct, received(('metrics', ct, _))))
         output("Writing to file")
         with open("results.csv", "a") as f:
             a = statistics.mean(l) if l else 0
@@ -842,6 +857,13 @@ class Scheduler (process):
             d = statistics.mean(goodjoins) if goodjoins else 0
             st = ", ".join(map(str, [ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT, a, b, c, d]))
             f.write(st + "\n")
+
+    def receive(msg=('metrics', ct, mem), from_=pid):
+        # Check eventual consistency of all left nodes
+        if len(mem) > len(nodes) and pid not in crash_nodes:
+            # output('Test Failed!!!', pid, 'has "{0}" Joined nodes, actual count "{1}"'.format(mem_count, len(nodes)))
+            output('Test Failed!!!', pid, 'has left nodes', mem - nodes)
+            success &= False
 
     def receive(msg = 'done'):
         -- fds
@@ -881,9 +903,9 @@ def main():
         output("*******************NUM_NODES*******************", NUM_NODES)
         scheduler = new(Scheduler,[str(ALPHA), BETA, GAMMA, DELTA, NUM_NODES, D, RETEN_COUNT])
         start(scheduler)
-        time.sleep(40)
+        time.sleep(30)
         send('done', to= scheduler)
-        output('sent done to schedule')
+        output('sent done to schedule at', time.time())
         NUM_NODES += float(custom_config["NODE_COUNT"]["step_size"])
 
 
