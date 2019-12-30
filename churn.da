@@ -5,6 +5,7 @@ import sys
 import statistics
 from tabulate import tabulate
 import csv
+certify = import_da('certify')
 
 """
 Comments Dictionary
@@ -15,8 +16,8 @@ $$$ - exact copy from algorithm
 # ---------------------------------------- #
 #                NODE CLASS                #
 # ---------------------------------------- #
-class Node (process):
-    def setup(known_nodes, scheduler, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT):
+class Node (process, certify.Interceptor):
+    def setup(known_nodes, scheduler, certifier, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT, config_name):
         self.custom_config = configparser.ConfigParser()
         self.custom_config.read('config.ini')
 
@@ -88,6 +89,7 @@ class Node (process):
         if known_nodes == set():  # $$$
             Changes.add(('enter', state_num, self))  # $$$
             bcast('enter', state_num, self)  # @@@
+            send('enter', to=certifier)
             output('entered, bcasted enter msgs')  # $$$
 
         # -------------------- End of Node setup method -------------------- #
@@ -171,6 +173,7 @@ class Node (process):
 
                 # tell scheduler I've joined
                 delayed_send(('joined'), scheduler)  # @@@
+                send(('joined'), to=certifier)
                 output('sent joined to scheduler')  # $$$
                 bcast('joined',state_num,self)  # $$$
 
@@ -237,6 +240,7 @@ class Node (process):
                 output('size of Changes: {0} and state_num:{1}'.format(len(Changes), state_num))
                 bcast('leave',state_num,self)
                 send(('leave'), to=scheduler)  # @@@
+                send(('leave'), to=certifier)
                 output('exiting...')
                 exit()
 
@@ -338,10 +342,13 @@ class Node (process):
                     read_pending = False
                     #make scheduler note the time here
                     delayed_send(('return',temp), scheduler)
+                    send(('return',temp), to=certifier)
                 if (write_pending):
                     write_pending = False
                     #make scheduler note the time here
-                    delayed_send('ack', scheduler)
+                    delayed_send('ack', (scheduler))
+                    send('ack', to=certifier)
+
 
     # ************************************************************* #
     # --------------------- SERVER code follows ------------------- #
@@ -396,7 +403,7 @@ class Node (process):
 #             SCHEDULER CLASS              #
 # ---------------------------------------- #
 class Scheduler (process):
-    def setup(ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT):
+    def setup(certifier, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT, config_name):
         self.custom_config = configparser.ConfigParser()
         self.custom_config.read('config.ini') 
         self.nodes = new(Node, num=int(NUM_INIT_NODE))
@@ -426,10 +433,7 @@ class Scheduler (process):
         # crash nodes order to check intervals of time
         self.crashorder = []
         # max allowed delay for one message
-
         #### END Variable declarations
-        self.condition2={}
-        ## to check if each read and write are completed in 2D
 
         self.max_delay = float(D)
         # delay adjustment to account for cpu time
@@ -439,10 +443,7 @@ class Scheduler (process):
         # Variable to check eventual consistency of all leave operation
         self.success = True
 
-        #      self.f = open("results.csv", "a")
-        #      self.WRITER = csv.writer(f, delimiter=",")
-
-        for p in nodes: setup(p, [nodes-{p}, self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT])
+        for p in nodes: setup(p, [nodes-{p}, self, certifier, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT, config_name])
         start(nodes)
         output('nodes present initially are', nodes)
 
@@ -465,15 +466,6 @@ class Scheduler (process):
             else:
                 table.append([pid, "-", "-"])
         print(tabulate(table, headers="firstrow", tablefmt="grid"))
-
-
-    def crash_node(p):
-        if crash_allowed():
-            crash_nodes.add(p)
-            output('NODE crashed')
-        else:
-            output('NODE NOT ALLOWED TO FAIL')
-            return None
 
 
     def churn_random_nodes(count):
@@ -499,16 +491,14 @@ class Scheduler (process):
                 p = random.choice(list(joined-left_nodes-crash_nodes))
                 output('randomly chosen node is', p)
                 p = test_leave(p)
-            if p:
-                i += 1
-            if r < 5:
+            i += 1
+            if r > 0:
                 if await(received('joined', from_= p) or received('leave', from_= p)): pass
                 elif timeout(int(join_delay)): pass
 
     def test_consistency():
-        # Just a bunch random tests. Here we go completely crazy and 
-        # make things crazy
-        check_condition_1()
+        # Just a bunch random tests. Here we go completely crazy and make things crazy
+        # check_condition_1()
         rounds= int(custom_config['GENERAL']['num_of_rounds'])
         for i in range(rounds):
             output('ROUND NUMBER:',i)
@@ -525,7 +515,7 @@ class Scheduler (process):
             if (r>0):                           #simulating network delay for a random node
                 p=random.choice(list(nodes-left_nodes-crash_nodes))
                 output('Sending sleep to ',p)
-                send('sleep',to=p)     
+                send('sleep',to=p)
             # Bits to identify whether we randomly do a read of a write 
             # If we have a True as the o/p of random choice then we do a read
             READ = True
@@ -549,223 +539,58 @@ class Scheduler (process):
                     output("Skipping one round...")
                     rounds-=1
                     break
-        output("EnterLeave order is: ", enterleaveorder)
-
-
-    def test_condition_1_invariant():
-        # Reference: arXiv:1708.03274 [cs.DC] Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
-        # "Emulating a Shared Register in a System that Never Stops Changing", August, 2015.page 3, para 6, point 1
-        error_found = False
-        output("Testing join times of nodes")
-        for pid in join_times:
-            if pid in joined and join_times[pid] > join_delay:
-                output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(pid, join_times[pid], join_delay))
-                error_found = True
-        entered_not_join = list(set(entered) - set(joined))
-        for pid in entered_not_join:
-            if pid in crash_nodes:
-                output("\nProcess {} crashed before joining".format(pid))
-            elif pid in left_nodes:
-                output("\nProcess {} left before joining".format(pid))
-            else:
-                output("\n###ERROR process never joined!!!")
-                error_found = True
-        if not error_found:
-            output("Join time is within permissible range for all nodes")
-        
-    
-    def anyof(s):
-        return next(iter(s)) if s else None
-
-
-    def check_condition_1():
-        # Test cases  for checking join eventually takes place for a node that never crashed or left 
-        rounds= int(custom_config['GENERAL']['num_of_rounds'])
-        for i in range(rounds):
-            output('ROUND NUMBER:',i)
-            r=random.randint(1,4) 
-            if r==1:          
-                p = test_enter()
-                if p:
-                    output('Making a node leave before joining', p)
-                    # allow the enter message to be received
-                    time.sleep(max_delay)
-                    test_leave(p)
-
-            elif r==2:        
-                p = test_enter()
-                output('Making a node crash before joining', p)
-                # allow the enter message to be received
-                time.sleep(max_delay)
-                crash_node(p)
-
-            elif r==3:
-                p = test_enter()
-                output('Making a node go down before joining', p)        
-                # allow the enter message to be received
-                time.sleep(max_delay)
-                output('Sending sleep to ',p)
-                send('sleep',to=p)
-            else:
-                output('Nothing to do in this round') 
-
-
-    def check_condition_3():
-        # The read and write operations are atomic:
-        #there is an ordering of all completed reads and writes
-        #and some subset of the uncompleted writes such that
-        #every read returns the value of the latest preceding
-        #write (or the initial value of the register if there is no
-        #preceding write) and, if an operation op1 finishes before
-        #another operation op2 begins, then op1 occurs before
-        #op2 in the ordering.
-        
-        # The idea is the we keep testing our read and writes. A number of random reads and random writes.
-        # Once we have that test to ensure that if a preceding write is complete, a read returns the correct values
-      
-        # Now that we have made out read and writes, we check the schedulers 
-        # received queue to check whether the data returned is ordered correctly.
-
-        output("Read write order is: ", readwriteorder)    
-        def getPreviousWrite(readwrites):
-            # Search for the first write from the end
-            for item in reversed(readwrites):
-                if item[0] == "write":
-                    return item
-        def getFirstValReturnedByProcess(readwrites, pid):
-            # Get the value of return for the corresponding read start.
-
-            for item in readwrites:
-                if item[0] == "readend" and item[3] == pid:
-                    return item[4]
-            return None
-
-        # For every read, find the previous write. Then check whether the values match. If they don't 
-        # we have a problem.
-        # We check from the second element in the list because we don't care about the first read.
-        for i in range(1, len(readwriteorder)):
-            item = readwriteorder[i]
-            # We have a read, find the previous write or ensure that there is no write if the value is None
-            if item[0] == 'readstarttime':
-                p = item[3]
-                # Get the value the read returned
-                val = getFirstValReturnedByProcess(readwriteorder[i:], p)
-                previouswrite = getPreviousWrite(readwriteorder[:i])
-                if previouswrite == None:
-                    if val != None:
-                        output("ERRORa!")
-                else:
-                    if val == None:
-                        output("ERRORb!")
-                    elif val != previouswrite[4]:
-                        output("ERRORc!")
-
 
     def run():
-        # check_condition_1()
+        send(('register',nodes), to=certifier)
         test_consistency()
-        # test_condition_3()    
-        # check_condition_1()
         output('Exited the loop')
         await(received('done'))
-        check_condition_3()
-        test_condition_1_invariant()
-        check_condition_2()
-        print_stats()
         output('scheduler terminating')
 
 
-    def get_count_before(ts):
-        valid_events =  [x for x in enterleaveorder if x[0] < ts]
-        if valid_events:
-            # Get the count from the lastest event
-            return valid_events[-1][2]
-        else:
-            return int(NUM_INIT_NODE)
+    def test_enter():
+        send('enter-request', to=certifier)
 
+    def receive(msg='perform-enter'):
+        p = new(Node, [set(), self, certifier, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT, config_name])
+        start(p)
+        nodes.add(p)
 
-    def get_event_count_in(start, end):
-        ret=[x for x in enterleaveorder if x[0]<end and x[0] > start]
-        return len(ret)      
-
-
-    def crash_allowed():
-        # Check the number of crash in current time - D
-        # If this is greater than delta*N(t-D) don't allow failure
-        curtime = time.time()
-        prevtime = curtime - max_delay
-        nt = get_count_before(prevtime)
-        if nt*float(DELTA) > len(crash_nodes)+1:
-            return False
-        else:
-            return True
-
-
-    def churn_allowed():
-        # Check the number of enter and leaves in current time - D
-        # If this is greater than alpha*N(t-D) don't allow churn
-        curtime = time.time()
-        prevtime = curtime - max_delay
-        nt = get_count_before(prevtime)
-        # output("ALPHA: {0}".format(ALPHA))
-        # output("number of nodes: {0}".format(nt))
-        if nt*float(ALPHA) < (get_event_count_in(prevtime, curtime)+1):
-            return False
-        else:
-            return True
+    def receive(msg='joined', from_=p):
+        output('join operation completed for ', p)
 
 
     def test_leave(p):
-        if not churn_allowed():
-            output('NODE CANNOT LEAVE THE SYSTEM')
-            return None 
-        enterleaveorder.append([time.time(), 'leave', len(nodes)])
+        send(('leave-request', p), to=certifier)
+
+
+    def receive(msg=('perform-leave',p)):
         send('leave-signal', to= p)
         output('making {0} node leave'.format(p))
         # to avoid calling leave/join/crash operation on already left node
         left_nodes.add(p)
-        leave_times[p] = time.time()
-        return p
-
-
-    def test_enter():
-        # returns the pid of the node entering, 'None' if system 
-        # doesn't allow enter.
-        if not churn_allowed():
-            output("NEW NODE CANNOT ENTER THE SYSTEM")
-            return None
-        enterleaveorder.append([time.time(), 'enter', len(nodes)])
-        p = new(Node, [set(), self, ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT])
-        start(p)
-        nodes.add(p)
-        join_times[p] = time.time()
-        return p
-
-
-    def receive(msg='joined', from_=p):
-        join_times[p] = time.time() - join_times[p]
-        output('join operation completed for ', p)
-        joined.add(p)
 
 
     def receive(msg='leave', from_=p):
-        leave_times[p] = time.time() - leave_times[p]
         output('Leave operation completed for ', p)
-        left_nodes.add(p)
         nodes.remove(p)
+
+
+    def crash_node(p):
+        send(('crash-request', p), to=certifier)
+
+
+    def receive(msg=('perform-crash',p)):
+        crash_nodes.add(p)
 
 
     def test_read(p):
         send('read', to= p)
-        if p in read_times:
-            read_times[p].append(time.time())
-        else:
-            read_times[p] = [time.time()]
+        send(('read',p), to=certifier)
 
-      
+
     def receive(msg=('return',temp), from_=p):
         output('read returns with value ', temp)
-        read_times[p][-1] = time.time() - read_times[p][-1]
         # p is no longer in use, so remove it from the in_use set
         in_use.remove(p)
       
@@ -773,15 +598,11 @@ class Scheduler (process):
     def test_write(p,val):
         output('test write start')
         send(('write',val), to= p)
-        if p in write_times:
-            write_times[p].append(time.time())
-        else:
-            write_times[p] = [time.time()]
+        send(('write',val,p), to= certifier)
 
       
     def receive(msg=('ack'), from_=p):
         output('write returned an ack from: ', p)
-        write_times[p][-1] = time.time() - write_times[p][-1]
         # p is no longer in use, so remove it from the in_use set
         in_use.remove(p)
 
@@ -789,74 +610,6 @@ class Scheduler (process):
     def receive(msg = ('bcast',m), from_=pid):
         send(m, to=nodes-crash_nodes)
 
-       
-    def receive(msg= ('writeupdatetime', num, wid, val), from_=pid):
-        readwriteorder.append([num, wid,'write', pid, val])
-
-
-    def receive(msg=('readstarttime', num, wid), from_=pid):
-        readwriteorder.append([num, wid,'read', pid])
-
-
-    def receive(msg=('readendtime', num, wid, val), from_=pid):
-        readwriteorder.append([num, wid, 'readend', pid, val])
-
-
-    def check_condition_2():
-        # read and write for a non-failed, non-crashed node should be completed within 2D
-        D=max_delay
-        output("Outputting crashed nodes", crash_nodes)
-        if success:
-            output('Verified eventual consistency for leaves')
-        writetbl = [["Process ID", "Write Time", "Reason"]]
-        readtbl = [["Process ID", "Read Time", "Reason"]]
-        goodreads = []
-        goodwrites = []
-        goodjoins = []
-        for i in read_times:
-            if i in crash_nodes:
-                readtbl.append([i, "-", "Crashed"])
-                continue
-            elif i in left_nodes:
-                readtbl.append([i, "-", "Left"])
-                continue
-            readtbl.append([i, statistics.mean(read_times[i]), "-"])
-            goodreads += [x for x in read_times[i]]
-        for i in write_times:
-            if i in crash_nodes:
-                writetbl.append([i, "-", "Crashed"])
-                continue
-            elif i in left_nodes:
-                writetbl.append([i, "-", "Left"])
-                continue
-            writetbl.append([i, statistics.mean(write_times[i]), "-"])
-            goodwrites += [x for x in write_times[i]]
-            
-        table = [["Process ID", "Join Time", "Reason"]]
-        for pid in join_times:
-            if pid in joined and join_times[pid] < 8*max_delay+100:
-                table.append([pid, join_times[pid], "-"])
-                goodjoins.append(join_times[pid])
-            else:
-                if pid in crash_nodes:
-                    table.append([pid, "-", "CRASHED"])
-                elif pid in left_nodes:
-                    table.append([pid, "-", "LEFT"])
-        print(tabulate(table, headers="firstrow", tablefmt="grid"))
-        print(tabulate(writetbl, headers="firstrow", tablefmt="grid"))
-        print(tabulate(readtbl, headers="firstrow", tablefmt="grid"))
-        if await(False): pass
-        elif timeout(10):
-            output("TO / Writing to file")
-            l = list(setof(ct, received(('metrics', ct, _))))
-        output("Writing to file")
-        with open("results.csv", "a") as f:
-            a = statistics.mean(l) if l else 0
-            b = statistics.mean(goodreads) if goodreads else 0
-            c = statistics.mean(goodwrites) if goodwrites else 0
-            d = statistics.mean(goodjoins) if goodjoins else 0
-            st = ", ".join(map(str, [ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT, a, b, c, d]))
-            f.write(st + "\n")
 
     def receive(msg=('metrics', ct, mem), from_=pid):
         # Check eventual consistency of all left nodes
@@ -888,6 +641,7 @@ def reset_globals(cc):
 def main():
     config(clock = Lamport)
     REPS = 1
+    config_name = "paxos"
     with open("results.csv", "a") as f:
         st = ", ".join(["ALPHA", "BETA", "GAMMA", "DELTA", "NUM_NODES", "D", "RETEN_COUNT", "CPU TIME AVG", "READ TIME", "WRITE TIME", "JOIN TIME"])
         f.write(st + "\n")
@@ -901,11 +655,16 @@ def main():
     NUM_NODES = float(custom_config["NODE_COUNT"]["value_start"])
     while(NUM_NODES<=float(custom_config["NODE_COUNT"]["value_end"])):
         output("*******************NUM_NODES*******************", NUM_NODES)
-        scheduler = new(Scheduler,[str(ALPHA), BETA, GAMMA, DELTA, NUM_NODES, D, RETEN_COUNT])
+        certifier = new(certify.Certifier, (ALPHA, BETA, GAMMA, DELTA, NUM_NODES, D, RETEN_COUNT, config_name))
+        scheduler = new(Scheduler,(certifier, ALPHA, BETA, GAMMA, DELTA, NUM_NODES, D, RETEN_COUNT, config_name))
+        start(certifier)
         start(scheduler)
-        time.sleep(30)
+        time.sleep(45)
         send('done', to= scheduler)
-        output('sent done to schedule at', time.time())
+        output('sent done to scheduler at', time.time())
+        send(('checkCorrectness'), to=certifier)
+        output('sent check correctness to Certifier')
+        await(some(received(('finish'), from_=certifier)))
         NUM_NODES += float(custom_config["NODE_COUNT"]["step_size"])
 
 
