@@ -1,0 +1,430 @@
+"""
+This is a small library for instrumenting DistAlgo implementations of
+consensus algorithms to certify the correctness of such algorithms.
+
+The Certifier class verifies the following conditions:
+1.  Validity: The Chosen value is one of the Proposed values.
+2.  Agreement: Only a single value is chosen.
+3.  Termination: Everyone has learnt the Chosen value.
+
+To adapt a DistAlgo program to use this, make the following changes.
+    1.  At the top of the file, add the line
+    
+        certify = import_da('certify')
+    
+    2.  In main(), 
+
+        2a. Create a Certifier process:
+
+            certifier = new(certify.Certifier, (nlearners,), num= 1)
+
+            where nlearners is the number of "Learner" processes.
+
+        2b. Then, pass this object to the "Proposer" and "Listener" setup() calls:
+
+            proposers = new(Proposer, (acceptors, certifier), num= nproposers)
+            learners = new(Learner, (acceptors, certifier), num= nlearners)
+
+        2c. Now start the certifier:
+
+            start(certifier)
+
+        2d. At the end of main(), send a message to check correctness of the
+            algorithm and wait for a response before exiting:
+
+            send(('checkCorrectness'), to=certifier)
+            await(some(received(('finish'), from_=certifier)))
+
+    3.  In the "Proposer" and "Learner" process classes, do the following:
+        
+        3a. Add a setup() parameter "certifier"
+
+        3b. Extend the class certify.Certify
+
+        3c. Invoke the super class setup method like this: super().setup(certifier)
+            OR
+            Just pass an object of type certify.Certifier to the setup. The setup()
+            parameter name should match the setup() parameter name of certify.Certify class.
+"""
+import time
+import sys
+from tabulate import tabulate
+import statistics
+
+configs = {
+    "paxos": {
+        "queues": {
+            "accept": {
+                "send_to": "proposed",
+                "send_index": "2"
+            },
+            "learned": {
+                "send_to": "chosen",
+                "send_index": "1"
+            }
+        },
+        # "verify_last": [
+        #     "check_validity",
+        #     "check_agreement",
+        #     "check_termination"
+        # ],
+    },
+    "multi-paxos": {
+        "queues": {
+            "propose": {
+                "slot_number": "1",
+                "send_to": "proposed",
+                "send_index": {
+                    "out": "2",
+                    "in": "2",
+                }
+            },
+            "decision": {
+                "slot_number": "1",
+                "send_to": "chosen",
+                "send_index": {
+                    "out": "2",
+                    "in": "2",
+                }
+            }
+        },
+        # "verify_last": [
+        #     "check_validity",
+        #     "check_agreement",
+        #     "check_termination"
+        # ],
+    }
+}
+
+class Certifier(process):
+    def setup(ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT, config_name: str):
+        self.nodes = set()  # all proposed values by Proposer processes
+        self.joined = set()
+        self.entered = set()
+        self.join_times = {}
+        # to keep a track of crashed nodes. Crash nodes are the failed nodes that scheduler doesn't know about. 
+        self.crash_nodes=set()
+        # to keep a track of left nodes 
+        self.left_nodes=set()
+        # A map with process_id -> time_taken_from_leave-req_to_leave
+        self.leave_times = {}
+        # A map with process_id -> [time_taken_to_write]
+        self.write_times = {} 
+        # A map with process_id -> [time_taken_to_read]
+        self.read_times={}
+        # read write timestamps to check the order
+        self.readwriteorder = []
+        # enter leave times to check intervals of time
+        self.enterleaveorder = []
+        # crash nodes order to check intervals of time
+        self.crashorder = []
+        # max allowed delay for one message
+        #### END Variable declarations
+
+        self.max_delay = float(D)
+        # delay adjustment to account for cpu time
+        self.delay_adjustment = 0.5
+        #### END Variable declarations
+        self.join_delay = (self.max_delay * 4)  + self.delay_adjustment
+        # Variable to check eventual consistency of all leave operation
+        self.success = True
+
+    def receive(msg= ('register',n)):
+        self.nodes = n # initial set of nodes
+        self.joined = n
+        self.entered = n
+        output(self.nodes)
+
+    def receive(msg= 'enter-request',  from_=scheduler):
+        if not churn_allowed():
+            output("NEW NODE CANNOT ENTER THE SYSTEM")
+        else:
+            send('perform-enter', to=scheduler)
+            self.enterleaveorder.append([time.time(), 'enter', len(self.nodes)])
+
+    def receive(msg= 'enter', from_=p):
+        self.join_times[p] = time.time()
+        self.nodes.add(p)
+        self.entered.add(p)
+
+    def receive(msg='joined', from_=p):
+        self.join_times[p] = time.time() - self.join_times[p]
+        self.joined.add(p)
+
+    def receive(msg= ('leave-request', p),  from_=scheduler):
+        if not churn_allowed():
+            output('NODE CANNOT LEAVE THE SYSTEM', p)
+        else:
+            send(('perform-leave',p), to=scheduler)
+            self.enterleaveorder.append([time.time(), 'leave', len(self.nodes)])
+            self.left_nodes.add(p)
+            self.leave_times[p] = time.time()
+
+    def receive(msg='leave', from_=p):
+        self.leave_times[p] = time.time() - self.leave_times[p]
+        self.nodes.remove(p)
+
+    def receive(msg=('crash-request',p), from_=scheduler):
+        if not crash_allowed():
+            output('NODE NOT ALLOWED TO FAIL', p)
+        else:
+            crash_nodes.add(p)
+            send(('perform-crash',p), to=scheduler)
+
+    def receive(msg=('read',p), from_=scheduler):
+        if p in self.read_times:
+            self.read_times[p].append(time.time())
+        else:
+            self.read_times[p] = [time.time()]
+
+    def receive(msg=('return',temp), from_=p):
+        self.read_times[p][-1] = time.time() - read_times[p][-1]
+
+    def receive(msg = ('write', v, p), from_=scheduler):
+        if p in write_times:
+            self.write_times[p].append(time.time())
+        else:
+            self.write_times[p] = [time.time()]
+
+    def receive(msg=('ack'), from_=p):
+        write_times[p][-1] = time.time() - write_times[p][-1]
+
+    def receive(msg= ('writeupdatetime', num, wid, val), from_=pid):
+        readwriteorder.append([num, wid,'write', pid, val])
+
+    def receive(msg=('readstarttime', num, wid), from_=pid):
+        readwriteorder.append([num, wid,'read', pid])
+
+    def receive(msg=('readendtime', num, wid, val), from_=pid):
+        readwriteorder.append([num, wid, 'readend', pid, val])
+
+    def get_count_before(ts):
+        valid_events =  [x for x in self.enterleaveorder if x[0] < ts]
+        if valid_events:
+            # Get the count from the lastest event
+            return valid_events[-1][2]
+        else:
+            return len(self.nodes)
+
+    def get_event_count_in(start, end):
+        ret=[x for x in self.enterleaveorder if x[0]<end and x[0] > start]
+        return len(ret)
+
+    def crash_allowed():
+        # Check the number of crash in current time - D
+        # If this is greater than delta*N(t-D) don't allow failure
+        curtime = time.time()
+        prevtime = curtime - max_delay
+        nt = get_count_before(prevtime)
+        if nt*float(DELTA) > len(crash_nodes)+1:
+            return False
+        else:
+            return True
+
+    def churn_allowed():
+        # Check the number of enter and leaves in current time - D
+        # If this is greater than alpha*N(t-D) don't allow churn
+        curtime = time.time()
+        prevtime = curtime - max_delay
+        nt = get_count_before(prevtime)
+        # output("ALPHA: {0}".format(ALPHA))
+        # output("number of nodes: {0}, number of previous events {1}".format(nt, get_event_count_in(prevtime, curtime)))
+        if nt*float(ALPHA) < (get_event_count_in(prevtime, curtime)+1):
+            return False
+        else:
+            return True
+
+    def checkCorrectness():
+        # return check_condition_3()
+        return check_condition_1() and check_condition_2() and check_condition_3()
+        # return checkValidity() and checkAgreement() and checkTermination()
+    def check_condition_3():
+        # The read and write operations are atomic:
+        #there is an ordering of all completed reads and writes
+        #and some subset of the uncompleted writes such that
+        #every read returns the value of the latest preceding
+        #write (or the initial value of the register if there is no
+        #preceding write) and, if an operation op1 finishes before
+        #another operation op2 begins, then op1 occurs before
+        #op2 in the ordering.
+        
+        # The idea is the we keep testing our read and writes. A number of random reads and random writes.
+        # Once we have that test to ensure that if a preceding write is complete, a read returns the correct values
+      
+        # Now that we have made out read and writes, we check the schedulers 
+        # received queue to check whether the data returned is ordered correctly.
+
+        output("Read write order is: ", readwriteorder)
+        succcess = True   
+        def getPreviousWrite(readwrites):
+            # Search for the first write from the end
+            for item in reversed(readwrites):
+                if item[0] == "write":
+                    return item
+        def getFirstValReturnedByProcess(readwrites, pid):
+            # Get the value of return for the corresponding read start.
+
+            for item in readwrites:
+                if item[0] == "readend" and item[3] == pid:
+                    return item[4]
+            return None
+
+        # For every read, find the previous write. Then check whether the values match. If they don't 
+        # we have a problem.
+        # We check from the second element in the list because we don't care about the first read.
+        for i in range(1, len(readwriteorder)):
+            item = readwriteorder[i]
+            # We have a read, find the previous write or ensure that there is no write if the value is None
+            if item[0] == 'readstarttime':
+                p = item[3]
+                # Get the value the read returned
+                val = getFirstValReturnedByProcess(readwriteorder[i:], p)
+                previouswrite = getPreviousWrite(readwriteorder[:i])
+                if previouswrite == None:
+                    if val != None:
+                        output("ERRORa!")
+                        success = False
+                else:
+                    if val == None:
+                        output("ERRORb!")
+                        success = False
+                    elif val != previouswrite[4]:
+                        output("ERRORc!")
+                        success = False
+        return success
+
+    def check_condition_2():
+        # read and write for a non-failed, non-crashed node should be completed within 2D
+        D=max_delay
+        output("Outputting crashed nodes", crash_nodes)
+        # if success:
+        #     output('Verified eventual consistency for leaves')
+        writetbl = [["Process ID", "Write Time", "Reason"]]
+        readtbl = [["Process ID", "Read Time", "Reason"]]
+        goodreads = []
+        goodwrites = []
+        goodjoins = []
+        for i in read_times:
+            if i in crash_nodes:
+                readtbl.append([i, "-", "Crashed"])
+                continue
+            elif i in left_nodes:
+                readtbl.append([i, "-", "Left"])
+                continue
+            readtbl.append([i, statistics.mean(read_times[i]), "-"])
+            goodreads += [x for x in read_times[i]]
+        for i in write_times:
+            if i in crash_nodes:
+                writetbl.append([i, "-", "Crashed"])
+                continue
+            elif i in left_nodes:
+                writetbl.append([i, "-", "Left"])
+                continue
+            writetbl.append([i, statistics.mean(write_times[i]), "-"])
+            goodwrites += [x for x in write_times[i]]
+            
+        table = [["Process ID", "Join Time", "Reason"]]
+        for pid in join_times:
+            if pid in joined and join_times[pid] < 8*max_delay+100:
+                table.append([pid, join_times[pid], "-"])
+                goodjoins.append(join_times[pid])
+            else:
+                if pid in crash_nodes:
+                    table.append([pid, "-", "CRASHED"])
+                elif pid in left_nodes:
+                    table.append([pid, "-", "LEFT"])
+        print(tabulate(table, headers="firstrow", tablefmt="grid"))
+        print(tabulate(writetbl, headers="firstrow", tablefmt="grid"))
+        print(tabulate(readtbl, headers="firstrow", tablefmt="grid"))
+        if await(False): pass
+        elif timeout(10):
+            output("TO / Writing to file")
+            l = list(setof(ct, received(('metrics', ct, _))))
+        output("Writing to file")
+        with open("results.csv", "a") as f:
+            a = statistics.mean(l) if l else 0
+            b = statistics.mean(goodreads) if goodreads else 0
+            c = statistics.mean(goodwrites) if goodwrites else 0
+            d = statistics.mean(goodjoins) if goodjoins else 0
+            st = ", ".join(map(str, [ALPHA, BETA, GAMMA, DELTA, NUM_INIT_NODE, D, RETEN_COUNT, a, b, c, d]))
+            f.write(st + "\n")
+        return True
+
+    def check_condition_1():
+        # Reference: arXiv:1708.03274 [cs.DC] Hagit Attiya, Hyun Chul Chung, Faith Ellen, Saptaparni Kumar, and Jennifer L. Welch,
+        # "Emulating a Shared Register in a System that Never Stops Changing", August, 2015.page 3, para 6, point 1
+        error_found = False
+        output("Testing join times of nodes")
+        for pid in join_times:
+            if pid in joined and join_times[pid] > join_delay:
+                output('\n###Process {0} Join time: {1} exceeds maximum allowed delay {2}\n'.format(pid, join_times[pid], join_delay))
+                error_found = True
+        entered_not_join = list(set(entered) - set(joined))
+        for pid in entered_not_join:
+            if pid in crash_nodes:
+                output("\nProcess {} crashed before joining".format(pid))
+            elif pid in left_nodes:
+                output("\nProcess {} left before joining".format(pid))
+            else:
+                output("\n###ERROR process never joined!!!")
+                error_found = True
+        if not error_found:
+            output("Join time is within permissible range for all nodes")
+        return not error_found
+
+    def run():
+        await(some(received(('checkCorrectness'), from_=server)))
+        output("EnterLeave order is: ", enterleaveorder)
+        if checkCorrectness():
+            output("### Correctness tests passed")
+        else:
+            output("### Correctness tests failed")
+        send('finish', to=server)
+
+class Interceptor(process):
+    def setup(certifier, config_name: str):
+        # self.proposeKeySet = {"accept"}
+        # self.chosenKeySet = {"learned"}
+        pass
+        # self.name = list()
+        # self.send_to = list()
+        # self.send_index = list()
+        # self.send_index_out = list()
+        # self.send_index_in = list()
+        # self.slot_number = list()
+        # self.paxos = configs[config_name]["queues"]
+        # for k, v in paxos.items():
+        #     if config_name == "multi-paxos":
+        #         self.slot_number.append(v["slot_number"])
+        #         self.send_index_out.append(v["send_index"]["out"])
+        #         self.send_index_in.append(v["send_index"]["in"])
+        #     else:
+        #         self.send_index.append(v["send_index"])
+
+        #     self.name.append(str(k))
+        #     self.send_to.append(v["send_to"])
+
+    def run(): pass
+
+    def send(message, to, channel=None, **rest):
+        # TODO: Have a config file which contains the proposed and chosen keysets
+        # and the index which will have the appropriate value.
+        # Eg: In paxos.da, index 2 in "accept" message will have the prposed value
+        # and index 1 in "learned" message will have the chosen value.
+
+        # if message[0] in name:
+        #     idx = name.index(message[0])
+        #     if not self.slot_number:
+        #     	send((send_to[idx], message[int(send_index[idx])], []), to= certifier)
+        #     else:
+        #         send((send_to[idx], message[int(send_index_out[idx])][int(send_index_in[idx])], int(message[int(slot_number[idx])])), to= certifier)
+
+        # if message[0] in proposeKeySet:
+        #     send(('proposed', message[2]), to= certifier)
+        # elif message[0] in chosenKeySet:
+        #     send(('chosen', message[1]), to= certifier)
+
+        super().send(message, to, channel, **rest)
+
+def main():
+    if __name__ == "__main__": main()
